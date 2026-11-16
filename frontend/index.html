@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>X Gen Clips — Viral Short-Form Video Engine</title>
-  <link rel="stylesheet" href="/css/claymorphism.css?v=3.1">
-  <link rel="stylesheet" href="/css/components.css?v=3.1">
+  <link rel="stylesheet" href="/css/claymorphism.css?v=3.2">
+  <link rel="stylesheet" href="/css/components.css?v=3.2">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 </head>
@@ -19,6 +19,11 @@
     </a>
 
     <div class="header-actions">
+      <div id="headerActiveWorkBanner" class="header-work-banner" style="display: none;">
+        <span class="live-pulse-dot"></span>
+        <span id="headerWorkText" class="header-work-text">Kaam chal raha hai...</span>
+        <button class="btn-cancel-header" onclick="App.cancelJob()" title="Kaam roko">🛑 End</button>
+      </div>
       <div id="headerStatusBadge" class="status-pill not-connected">
         <span class="status-dot"></span> Checking...
       </div>
@@ -52,6 +57,9 @@
           </div>
           <button id="mainSubmitBtn" class="clay-btn clay-btn-primary submit-btn">
             🚀 Clips Banao
+          </button>
+          <button id="heroCancelBtn" class="clay-btn btn-danger-cancel submit-btn" onclick="App.cancelJob()" style="display: none;">
+            🛑 Kaam Roko (End)
           </button>
         </div>
 
@@ -159,13 +167,25 @@
       </section>
 
       <!-- Real-time Progress Bar -->
-      <section id="progressCard" class="clay-card progress-card">
+      <section id="progressCard" class="clay-card progress-card" style="display: none;">
         <div class="progress-header">
-          <span id="progressStepText" class="progress-step-text">Starting pipeline...</span>
-          <span id="progressTimer" class="progress-timer">0s elapsed</span>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="live-pulse-dot"></span>
+            <span id="progressStepText" class="progress-step-text">Starting pipeline...</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span id="progressTimer" class="progress-timer">0s elapsed</span>
+            <button id="cardCancelBtn" class="btn-cancel-card" onclick="App.cancelJob()">
+              🛑 Kaam Roko / End
+            </button>
+          </div>
         </div>
         <div class="progress-bar-track">
           <div id="progressBarFill" class="progress-bar-fill"></div>
+        </div>
+        <div class="progress-footer-info" style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-muted); margin-top: 4px;">
+          <span id="progressPctLabel" style="font-weight: 700; color: var(--text-primary);">0% completed</span>
+          <span>⚡ Fast NVENC GPU Pipeline active • Real-time Stream</span>
         </div>
       </section>
 
@@ -340,8 +360,8 @@
     </div>
   </footer>
 
-  <script src="/js/player.js?v=3.1"></script>
-  <script src="/js/social.js?v=3.1"></script>
-  <script src="/js/app.js?v=3.1"></script>
+  <script src="/js/player.js?v=3.2"></script>
+  <script src="/js/social.js?v=3.2"></script>
+  <script src="/js/app.js?v=3.2"></script>
 </body>
 </html>

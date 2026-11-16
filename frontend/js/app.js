@@ -12,9 +12,53 @@ const App = {
     this.initTheme();
     await this.loadSettings();
     this.initSSE();
+    this.checkActiveStatus();
     this.loadClips();
     this.checkHealthBadge();
     this.bindEvents();
+  },
+
+  async checkActiveStatus() {
+    try {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      if (data.status === 'running') {
+        this.updateProgress(data.progress || 10, data.step || 'Kaam chal raha hai...', data.elapsed_sec || 0);
+        this.setWorkingState(true, data.step, data.progress);
+      } else {
+        this.setWorkingState(false);
+      }
+    } catch (e) {}
+  },
+
+  setWorkingState(isWorking, stepMsg, pct) {
+    const banner = document.getElementById('headerActiveWorkBanner');
+    const headerText = document.getElementById('headerWorkText');
+    const heroCancel = document.getElementById('heroCancelBtn');
+    const submitBtn = document.getElementById('mainSubmitBtn');
+
+    if (banner) {
+      banner.style.display = isWorking ? 'inline-flex' : 'none';
+      if (headerText && stepMsg) {
+        headerText.innerText = `${stepMsg} ${pct ? '(' + pct + '%)' : ''}`;
+      }
+    }
+
+    if (heroCancel) {
+      heroCancel.style.display = isWorking ? 'inline-block' : 'none';
+    }
+
+    if (submitBtn) {
+      if (isWorking) {
+        submitBtn.innerHTML = `⏳ Kaam chal raha hai... ${pct ? '(' + pct + '%)' : ''}`;
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = '0.85';
+      } else {
+        submitBtn.innerHTML = `🚀 Clips Banao`;
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+      }
+    }
   },
 
   initTheme() {
@@ -265,6 +309,15 @@ const App = {
       this.onNewClipReady(clip);
     });
 
+    this.eventSource.addEventListener('cancelled', (e) => {
+      let msg = "Process user dwara cancel kar diya gaya.";
+      try {
+        const data = JSON.parse(e.data);
+        msg = data.message || msg;
+      } catch (err) {}
+      this.onJobCancelled(msg);
+    });
+
     this.eventSource.addEventListener('error', (e) => {
       try {
         const data = JSON.parse(e.data);
@@ -278,18 +331,59 @@ const App = {
     const bar = document.getElementById('progressBarFill');
     const step = document.getElementById('progressStepText');
     const timer = document.getElementById('progressTimer');
+    const pctLabel = document.getElementById('progressPctLabel');
 
     if (card) card.style.display = 'flex';
     if (bar) bar.style.width = `${pct}%`;
     if (step) step.innerText = stepMsg;
     if (timer) timer.innerText = `${elapsed || 0}s elapsed`;
+    if (pctLabel) pctLabel.innerText = `${pct}% completed`;
+
+    this.setWorkingState(true, stepMsg, pct);
 
     if (pct >= 100) {
+      this.setWorkingState(false);
       setTimeout(() => {
         if (card) card.style.display = 'none';
         this.loadClips();
       }, 2500);
     }
+  },
+
+  async cancelJob() {
+    if (!confirm("Kya aap chal rahe process ko sach mein rokna chahte hain?")) {
+      return;
+    }
+
+    const cardCancel = document.getElementById('cardCancelBtn');
+    const heroCancel = document.getElementById('heroCancelBtn');
+    const headerCancel = document.querySelector('.btn-cancel-header');
+
+    if (cardCancel) cardCancel.innerText = "⏳ Rok rahe hain...";
+    if (heroCancel) heroCancel.innerText = "⏳ Rok rahe hain...";
+    if (headerCancel) headerCancel.innerText = "⏳ ...";
+
+    try {
+      const res = await fetch('/api/cancel', { method: 'POST' });
+      const data = await res.json();
+      this.onJobCancelled(data.message || "Process successfully rok diya gaya hai.");
+    } catch (e) {
+      this.onJobCancelled("Process cancel kar diya gaya.");
+    } finally {
+      if (cardCancel) cardCancel.innerText = "🛑 Kaam Roko / End";
+      if (heroCancel) heroCancel.innerText = "🛑 Kaam Roko (End)";
+      if (headerCancel) headerCancel.innerText = "🛑 End";
+    }
+  },
+
+  onJobCancelled(msg) {
+    this.setWorkingState(false);
+    const card = document.getElementById('progressCard');
+    if (card) card.style.display = 'none';
+    const bar = document.getElementById('progressBarFill');
+    if (bar) bar.style.width = '0%';
+
+    alert(msg || "✓ Process successfully rok diya gaya hai.");
   },
 
   onNewClipReady(clip) {
@@ -447,6 +541,7 @@ const App = {
   },
 
   showError(msg) {
+    this.setWorkingState(false);
     const card = document.getElementById('progressCard');
     if (card) card.style.display = 'none';
     alert(`Error: ${msg}`);

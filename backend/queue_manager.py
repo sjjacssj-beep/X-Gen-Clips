@@ -18,11 +18,34 @@ class JobQueueManager:
         self.active_job = None
         self.listeners = []
         self.lock = threading.Lock()
+        self.cancel_event = threading.Event()
+        self.active_processes = []
+
+    def register_process(self, proc):
+        with self.lock:
+            self.active_processes.append(proc)
+
+    def unregister_process(self, proc):
+        with self.lock:
+            if proc in self.active_processes:
+                self.active_processes.remove(proc)
+
+    def cancel_active_job(self):
+        self.cancel_event.set()
+        with self.lock:
+            for proc in list(self.active_processes):
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            self.active_processes.clear()
+            self.active_job = None
 
     def get_state(self) -> Dict[str, Any]:
         with self.lock:
             return {
                 "active_job": self.active_job,
+                "is_cancelled": self.cancel_event.is_set(),
                 "queue_length": len(self.jobs),
                 "queued_jobs": [
                     {"id": j["id"], "url": j["url"], "title": j.get("title", "Queued Video")}

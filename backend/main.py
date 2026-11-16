@@ -133,6 +133,9 @@ def worker_process_job(req: ProcessRequest):
     settings = load_settings()
     gemini_model = settings.get("model", "gemini-3.5-flash")
 
+    job_manager.cancel_event.clear()
+    job_manager.active_job = {"url": req.url, "started_at": time.time()}
+
     state["status"] = "running"
     state["error"] = None
     state["logs"] = []
@@ -142,6 +145,8 @@ def worker_process_job(req: ProcessRequest):
     t0 = time.time()
 
     def update_prog(pct: int, msg: str):
+        if job_manager.cancel_event.is_set():
+            raise InterruptedError("Process cancelled by user")
         state["progress"] = pct
         state["step"] = msg
         state["elapsed_sec"] = int(time.time() - t0)
@@ -150,7 +155,8 @@ def worker_process_job(req: ProcessRequest):
         job_manager.broadcast("progress", {
             "progress": pct,
             "step": msg,
-            "elapsed_sec": state["elapsed_sec"]
+            "elapsed_sec": state["elapsed_sec"],
+            "url": req.url
         })
 
     try:
@@ -329,12 +335,27 @@ Hashtags: {' '.join(p_data.get('tiktok', {}).get('hashtags', []))}
         if settings.get("auto_open_folder") and sys.platform == "win32":
             subprocess.Popen(["explorer", str(OUTPUTS_DIR)])
 
+    except InterruptedError:
+        state["status"] = "idle"
+        state["progress"] = 0
+        state["step"] = "Process cancel kar diya gaya."
+        log_event("JOB CANCELLED: user triggered cancel.")
+        job_manager.broadcast("cancelled", {"message": "Process user dwara cancel kar diya gaya."})
     except Exception as e:
-        state["status"] = "error"
-        state["error"] = str(e)
-        state["logs"].append(f"ERROR: {str(e)}")
-        log_event(f"ERROR: {str(e)}")
-        job_manager.broadcast("error", {"message": str(e)})
+        if job_manager.cancel_event.is_set():
+            state["status"] = "idle"
+            state["progress"] = 0
+            state["step"] = "Process cancel kar diya gaya."
+            log_event("JOB CANCELLED: user triggered cancel.")
+            job_manager.broadcast("cancelled", {"message": "Process user dwara cancel kar diya gaya."})
+        else:
+            state["status"] = "error"
+            state["error"] = str(e)
+            state["logs"].append(f"ERROR: {str(e)}")
+            log_event(f"ERROR: {str(e)}")
+            job_manager.broadcast("error", {"message": str(e)})
+    finally:
+        job_manager.active_job = None
 
 @app.get("/")
 def get_index():
@@ -345,7 +366,24 @@ def get_index():
 
 @app.get("/api/status")
 def get_status():
-    return state
+    return {
+        **state,
+        "is_active": state["status"] == "running"
+    }
+
+@app.post("/api/cancel")
+def cancel_job():
+    """Immediately terminates running downloads, renders, and active tasks."""
+    global state
+    was_running = (state["status"] == "running")
+    job_manager.cancel_active_job()
+    state["status"] = "idle"
+    state["progress"] = 0
+    state["step"] = "Process cancel kar diya gaya."
+    state["error"] = None
+    job_manager.broadcast("cancelled", {"message": "Process user dwara cancel kar diya gaya."})
+    log_event("API: /api/cancel executed successfully.")
+    return {"status": "cancelled", "was_running": was_running, "message": "Kaam successfully rok diya gaya hai."}
 
 @app.get("/api/stream")
 def get_sse_stream():

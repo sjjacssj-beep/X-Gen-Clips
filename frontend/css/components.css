@@ -210,6 +210,104 @@
   border-color: var(--accent-sky);
 }
 
+/* Live Pulsing Dot */
+.live-pulse-dot {
+  width: 10px;
+  height: 10px;
+  background-color: #EF4444;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  animation: livePulseAnim 1.4s infinite cubic-bezier(0.66, 0, 0, 1);
+  flex-shrink: 0;
+}
+
+@keyframes livePulseAnim {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.75); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+/* Header Active Work Banner */
+.header-work-banner {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-pill);
+  animation: viewFadeIn 0.25s ease;
+}
+
+.header-work-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #F87171;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-cancel-header {
+  padding: 4px 12px;
+  background: #DC2626;
+  color: #FFFFFF;
+  border: none;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4);
+}
+
+.btn-cancel-header:hover {
+  background: #B91C1C;
+  transform: scale(1.05);
+}
+
+/* Card Cancel Button */
+.btn-cancel-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-cancel-card:hover {
+  background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(220, 38, 38, 0.5);
+}
+
+.btn-cancel-card:active {
+  transform: translateY(1px);
+}
+
+/* Hero Action Bar Cancel Button */
+.btn-danger-cancel {
+  background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+
+.btn-danger-cancel:hover {
+  background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%) !important;
+  box-shadow: 0 8px 20px rgba(220, 38, 38, 0.4) !important;
+}
+
 /* Progress Section */
 .progress-card {
   display: none;

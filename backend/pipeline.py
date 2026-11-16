@@ -25,6 +25,39 @@ if venv_scripts.exists() and str(venv_scripts) not in os.environ.get("PATH", "")
 
 YTDLP_CMD = [sys.executable, "-m", "yt_dlp"]
 
+def run_managed_cmd(cmd: List[str], timeout: Optional[int] = None, check: bool = True):
+    from .queue_manager import job_manager
+    if job_manager.cancel_event.is_set():
+        raise InterruptedError("Process cancelled by user")
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace"
+    )
+    job_manager.register_process(proc)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        if job_manager.cancel_event.is_set():
+            raise InterruptedError("Process cancelled by user")
+        if check and proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd, output=stdout, stderr=stderr)
+        class SubprocessResult:
+            def __init__(self, code, out, err):
+                self.returncode = code
+                self.stdout = out
+                self.stderr = err
+        return SubprocessResult(proc.returncode, stdout, stderr)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        raise
+    finally:
+        job_manager.unregister_process(proc)
+
 def get_video_info(url_or_path: str) -> Dict[str, Any]:
     """Fast extraction of title, thumbnail, duration without downloading video."""
     if os.path.exists(url_or_path):
@@ -80,7 +113,7 @@ def download_audio_16k(url: str, out_dir: Path) -> Tuple[Path, str]:
     # If local file
     if os.path.exists(url):
         cmd = ["ffmpeg", "-y", "-i", url, "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", str(wav_path)]
-        subprocess.run(cmd, capture_output=True, check=True)
+        run_managed_cmd(cmd, check=True)
         return wav_path, vid_id
 
     temp_audio = out_dir / f"raw_audio_{vid_id}.webm"
@@ -91,7 +124,7 @@ def download_audio_16k(url: str, out_dir: Path) -> Tuple[Path, str]:
         "--no-playlist",
         url
     ]
-    subprocess.run(ytdl_cmd, capture_output=True, check=True, timeout=120)
+    run_managed_cmd(ytdl_cmd, check=True, timeout=120)
 
     # Convert to 16kHz mono WAV
     ff_cmd = [
@@ -103,7 +136,7 @@ def download_audio_16k(url: str, out_dir: Path) -> Tuple[Path, str]:
         "-c:a", "pcm_s16le",
         str(wav_path)
     ]
-    subprocess.run(ff_cmd, capture_output=True, check=True)
+    run_managed_cmd(ff_cmd, check=True)
 
     if temp_audio.exists():
         temp_audio.unlink(missing_ok=True)
@@ -201,7 +234,7 @@ def download_section_video(url: str, start_sec: float, end_sec: float, out_dir: 
         "--no-playlist",
         url
     ]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    r = run_managed_cmd(cmd, timeout=120, check=False)
     if r.returncode == 0 and section_file.exists():
         return section_file
 
@@ -213,7 +246,7 @@ def download_section_video(url: str, start_sec: float, end_sec: float, out_dir: 
         "--no-playlist",
         url
     ]
-    subprocess.run(cmd_fallback, capture_output=True, check=True, timeout=180)
+    run_managed_cmd(cmd_fallback, check=True, timeout=180)
     return source_file
 
 def render_clip_single_pass(
@@ -370,7 +403,7 @@ def render_clip_single_pass(
         str(out_clip_path)
     ])
 
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
+    r = run_managed_cmd(cmd, timeout=240, check=False)
     if r.returncode != 0:
         # Fallback without hardware acceleration
         cmd_fallback = [
@@ -390,7 +423,7 @@ def render_clip_single_pass(
             "-movflags", "+faststart",
             str(out_clip_path)
         ]
-        subprocess.run(cmd_fallback, capture_output=True, check=True, timeout=240)
+        run_managed_cmd(cmd_fallback, check=True, timeout=240)
 
     return out_clip_path
 
