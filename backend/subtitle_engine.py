@@ -71,8 +71,8 @@ def generate_hormozi_ass(
     out_path: Path,
     style_key: str = "hormozi",
     position: str = "bottom",
-    font_size: int = 62,
-    font_name: str = "Arial Black"
+    font_size: int = 60,
+    font_name: str = "Noto Sans Devanagari"
 ) -> Path:
     """
     Generates auto-fitted, phone-camera-safe word-by-word karaoke subtitles in .ass format.
@@ -115,7 +115,7 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: TrendingCaptions,{font_name},{font_size},{primary_color},{active_color},{outline_color},{shadow_color},-1,0,0,0,100,100,2,0,1,8,3,{alignment},{margin_lr},{margin_lr},{margin_v},1
+Style: TrendingCaptions,{font_name},{font_size},{primary_color},{active_color},{outline_color},{shadow_color},-1,0,0,0,100,100,0,0,1,6,2,{alignment},{margin_lr},{margin_lr},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

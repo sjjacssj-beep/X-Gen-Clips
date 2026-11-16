@@ -301,17 +301,41 @@ def render_clip_single_pass(
     if len(clean_hook) > 36:
         clean_hook = clean_hook[:36] + "..."
 
+    blur_w = target_w // 4
+    blur_h = target_h // 4
+
     filter_chains = []
 
-    # 1. Background blur
-    filter_chains.append(f"[0:v]scale={blur_w}:{blur_h},boxblur=5:2,scale={target_w}:{target_h}[bg]")
-
-    # 2. Foreground cropped & zoomed
-    filter_chains.append(f"[0:v]{crop_expr},scale={target_w}:{target_h}[fg_base]")
-    filter_chains.append(f"[fg_base]zoompan={zoom_expr}[fg]")
-
-    # 3. Overlay foreground on blurred background
-    filter_chains.append(f"[bg][fg]overlay=0:0[merged]")
+    if mode == "crisp_crop":
+        # 9:16 Fullscreen fill with sharp center crop (No pixelation, No zoompan)
+        filter_chains.append(
+            f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,"
+            f"crop={target_w}:{target_h}:(iw-{target_w})/2:(ih-{target_h})/2[merged]"
+        )
+    elif mode == "film_mood":
+        # Cinematic Letterbox with soft atmospheric blurred background + film grade
+        filter_chains.append(
+            f"[0:v]scale={blur_w}:{blur_h}:force_original_aspect_ratio=increase,"
+            f"crop={blur_w}:{blur_h},boxblur=8:3,scale={target_w}:{target_h},eq=brightness=-0.10:contrast=1.1:saturation=1.15[bg]"
+        )
+        filter_chains.append(f"[0:v]scale={target_w}:-2[fg]")
+        filter_chains.append(f"[bg][fg]overlay=(W-w)/2:(H-h)/2[merged]")
+    elif mode == "vibrant":
+        # Vibrant Gaming/Creator Boost: Colorful Background + High Clarity Foreground
+        filter_chains.append(
+            f"[0:v]scale={blur_w}:{blur_h}:force_original_aspect_ratio=increase,"
+            f"crop={blur_w}:{blur_h},boxblur=8:3,scale={target_w}:{target_h},eq=brightness=-0.06:saturation=1.3[bg]"
+        )
+        filter_chains.append(f"[0:v]scale={target_w}:-2,eq=saturation=1.15:contrast=1.05[fg]")
+        filter_chains.append(f"[bg][fg]overlay=(W-w)/2:(H-h)/2[merged]")
+    else:  # Default: "cinematic_blur"
+        # Professional 9:16 vertical canvas with high-res 16:9 centered and smooth blurred backdrop
+        filter_chains.append(
+            f"[0:v]scale={blur_w}:{blur_h}:force_original_aspect_ratio=increase,"
+            f"crop={blur_w}:{blur_h},boxblur=8:3,scale={target_w}:{target_h},eq=brightness=-0.08:saturation=1.15[bg]"
+        )
+        filter_chains.append(f"[0:v]scale={target_w}:-2[fg]")
+        filter_chains.append(f"[bg][fg]overlay=(W-w)/2:(H-h)/2[merged]")
 
     # 4. Hook Title Card (First 3 seconds - Phone Camera Safe at y=340)
     hook_fontsize = 34 if is_preview else 60
@@ -347,7 +371,7 @@ def render_clip_single_pass(
             ass_str = os.path.relpath(ass_path, Path.cwd()).replace("\\", "/")
         except Exception:
             ass_str = str(ass_path).replace("\\", "/").replace(":", "\\:").replace(" ", "\\ ")
-        filter_chains.append(f"[{last_v}]ass='{ass_str}'[v_out]")
+        filter_chains.append(f"[{last_v}]ass='{ass_str}':fontsdir=fonts[v_out]")
     else:
         filter_chains.append(f"[{last_v}]copy[v_out]")
 
@@ -403,7 +427,7 @@ def render_clip_single_pass(
         str(out_clip_path)
     ])
 
-    r = run_managed_cmd(cmd, timeout=240, check=False)
+    r = run_managed_cmd(cmd, timeout=300, check=False)
     if r.returncode != 0:
         # Fallback without hardware acceleration
         cmd_fallback = [
@@ -423,7 +447,7 @@ def render_clip_single_pass(
             "-movflags", "+faststart",
             str(out_clip_path)
         ]
-        run_managed_cmd(cmd_fallback, check=True, timeout=240)
+        run_managed_cmd(cmd_fallback, check=True, timeout=300)
 
     return out_clip_path
 

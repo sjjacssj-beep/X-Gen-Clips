@@ -224,7 +224,7 @@ def worker_process_job(req: ProcessRequest):
                     style_key=req.caption_color,
                     position=req.caption_position,
                     font_size=req.caption_size,
-                    font_name=settings.get("brand_font", "Baloo 2")
+                    font_name=settings.get("brand_font", "Noto Sans Devanagari")
                 )
 
                 # Sanitize clip filename with prefix xgenclips_
