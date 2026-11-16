@@ -18,6 +18,8 @@ const App = {
     this.bindEvents();
   },
 
+  pollTimer: null,
+
   async checkActiveStatus() {
     try {
       const res = await fetch('/api/status');
@@ -25,13 +27,52 @@ const App = {
       if (data.status === 'running') {
         this.updateProgress(data.progress || 10, data.step || 'Kaam chal raha hai...', data.elapsed_sec || 0);
         this.setWorkingState(true, data.step, data.progress);
+        this.startPolling();
       } else {
         this.setWorkingState(false);
       }
     } catch (e) {}
   },
 
+  startPolling() {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = setInterval(async () => {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        if (data.status === 'running') {
+          this.updateProgress(data.progress || 10, data.step || 'Kaam chal raha hai...', data.elapsed_sec || 0);
+          this.setWorkingState(true, data.step, data.progress);
+        } else if (data.status === 'completed') {
+          this.updateProgress(100, data.step || 'Done!', data.elapsed_sec || 0);
+          this.setWorkingState(false);
+          this.stopPolling();
+          this.loadClips();
+        } else if (data.status === 'idle') {
+          this.setWorkingState(false);
+          this.stopPolling();
+        } else if (data.status === 'error') {
+          this.setWorkingState(false);
+          this.stopPolling();
+        }
+      } catch (e) {}
+    }, 2000);
+  },
+
+  stopPolling() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  },
+
   setWorkingState(isWorking, stepMsg, pct) {
+    if (isWorking) {
+      this.startPolling();
+    } else {
+      this.stopPolling();
+    }
+
     const banner = document.getElementById('headerActiveWorkBanner');
     const headerText = document.getElementById('headerWorkText');
     const heroCancel = document.getElementById('heroCancelBtn');
@@ -524,6 +565,7 @@ const App = {
 
     document.getElementById('progressCard').style.display = 'flex';
     this.updateProgress(5, "Queue mein laga rahe hain...", 0);
+    this.setWorkingState(true, "Queue mein laga rahe hain...", 5);
 
     try {
       const res = await fetch('/api/process', {
@@ -533,7 +575,31 @@ const App = {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail || "Process shuru nahi ho paya.");
+        const detail = err.detail || "";
+        if (detail.includes("pehle se chal raha hai")) {
+          const shouldRestart = confirm("Ek job background mein pehle se chal raha hai.\n\nKya aap purana job ROK KAR naye सिरे se shuru karna chahte hain?");
+          if (shouldRestart) {
+            this.updateProgress(5, "Purana job rokar naya video shuru kar rahe hain...", 0);
+            await fetch('/api/cancel', { method: 'POST' });
+            await new Promise(r => setTimeout(r, 600));
+            payload.force = true;
+            const retryRes = await fetch('/api/process', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (!retryRes.ok) {
+              const retryErr = await retryRes.json();
+              throw new Error(retryErr.detail || "Process restart fail hua.");
+            }
+            this.setWorkingState(true, "Video download ho raha hai...", 10);
+            return;
+          } else {
+            this.setWorkingState(false);
+            return;
+          }
+        }
+        throw new Error(detail || "Process shuru nahi ho paya.");
       }
     } catch (e) {
       this.showError(e.message);

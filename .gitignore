@@ -19,12 +19,17 @@ __pycache__/
 # Output media & cache (generated local videos)
 outputs/*.mp4
 outputs/*.wav
+outputs/*.webm
 outputs/*.ass
 outputs/*.srt
 outputs/*.json
 outputs/*.txt
+outputs/*.jpg
+outputs/*.jpeg
+outputs/*.png
 !outputs/.gitkeep
 output/
+history.json
 
 # Logs & temp
 logs.txt

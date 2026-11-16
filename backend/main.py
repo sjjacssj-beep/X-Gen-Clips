@@ -3,6 +3,7 @@ import concurrent.futures
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -106,6 +107,7 @@ class ProcessRequest(BaseModel):
     enable_sfx: bool = True
     watermark_text: str = ""
     language: str = "hinglish"
+    force: bool = False
 
 class ResuggestRequest(BaseModel):
     clip_id: Optional[int] = None
@@ -185,100 +187,103 @@ def worker_process_job(req: ProcessRequest):
         cpu_workers = min(os.cpu_count() or 4, len(clip_candidates))
 
         def render_single_clip(item_tuple):
+            if job_manager.cancel_event.is_set():
+                raise InterruptedError("Process cancelled by user")
             idx, candidate = item_tuple
-            raw_start = float(candidate["start"])
-            raw_end = float(candidate["end"])
+            try:
+                raw_start = float(candidate["start"])
+                raw_end = float(candidate["end"])
 
-            # Smart sentence-boundary snapping
-            clean_start, clean_end = pipeline.snap_to_sentence_boundary(transcript, raw_start, raw_end)
-            dur = clean_end - clean_start
+                # Smart sentence-boundary snapping
+                clean_start, clean_end = pipeline.snap_to_sentence_boundary(transcript, raw_start, raw_end)
+                dur = clean_end - clean_start
 
-            # Selective video section download
-            source_file = pipeline.download_section_video(req.url, clean_start, clean_end, OUTPUTS_DIR, vid_id)
+                # Selective video section download
+                source_file = pipeline.download_section_video(req.url, clean_start, clean_end, OUTPUTS_DIR, vid_id)
 
-            # Filter relevant words for ASS karaoke subtitles
-            clip_words = []
-            for s in transcript:
-                if s["end"] >= clean_start and s["start"] <= clean_end:
-                    for w in s.get("words", []):
-                        w_word = w.get("word") or w.get("w", "")
-                        w_start = w.get("start") if "start" in w else w.get("s", s["start"])
-                        w_end = w.get("end") if "end" in w else w.get("e", s["end"])
-                        if w_end >= clean_start and w_start <= clean_end:
-                            # Re-offset word timestamps to clip start
-                            clip_words.append({
-                                "word": w_word,
-                                "start": max(0.0, round(w_start - clean_start, 2)),
-                                "end": max(0.1, round(w_end - clean_start, 2))
-                            })
+                # Filter relevant words for ASS karaoke subtitles
+                clip_words = []
+                for s in transcript:
+                    if s["end"] >= clean_start and s["start"] <= clean_end:
+                        for w in s.get("words", []):
+                            w_word = w.get("word") or w.get("w", "")
+                            w_start = w.get("start") if "start" in w else w.get("s", s["start"])
+                            w_end = w.get("end") if "end" in w else w.get("e", s["end"])
+                            if w_end >= clean_start and w_start <= clean_end:
+                                # Re-offset word timestamps to clip start
+                                clip_words.append({
+                                    "word": w_word,
+                                    "start": max(0.0, round(w_start - clean_start, 2)),
+                                    "end": max(0.1, round(w_end - clean_start, 2))
+                                })
 
-            ass_path = OUTPUTS_DIR / f"xgenclips_{vid_id}_{idx}.ass"
-            subtitle_engine.generate_hormozi_ass(
-                words=clip_words,
-                out_path=ass_path,
-                style_key=req.caption_color,
-                position=req.caption_position,
-                font_size=req.caption_size,
-                font_name=settings.get("brand_font", "Baloo 2")
-            )
+                ass_path = OUTPUTS_DIR / f"xgenclips_{vid_id}_{idx}.ass"
+                subtitle_engine.generate_hormozi_ass(
+                    words=clip_words,
+                    out_path=ass_path,
+                    style_key=req.caption_color,
+                    position=req.caption_position,
+                    font_size=req.caption_size,
+                    font_name=settings.get("brand_font", "Baloo 2")
+                )
 
-            # Sanitize clip filename with prefix xgenclips_
-            clean_title = re.sub(r'[\\/*?:"<>|]', "", candidate.get("title", f"clip{idx}")).strip()
-            title_slug = re.sub(r'\s+', '_', clean_title[:32]).strip('_')
-            out_name = f"xgenclips_clip{idx}_{title_slug}.mp4" if title_slug else f"xgenclips_clip{idx}.mp4"
-            out_clip = OUTPUTS_DIR / out_name
+                # Sanitize clip filename with prefix xgenclips_
+                clean_title = re.sub(r'[\\/*?:"<>|]', "", candidate.get("title", f"clip{idx}")).strip()
+                title_slug = re.sub(r'\s+', '_', clean_title[:32]).strip('_')
+                out_name = f"xgenclips_clip{idx}_{title_slug}.mp4" if title_slug else f"xgenclips_clip{idx}.mp4"
+                out_clip = OUTPUTS_DIR / out_name
 
-            hook_line = candidate.get("hook_line", "WATCH TILL END! 🔥")
+                hook_line = candidate.get("hook_line", "WATCH TILL END! 🔥")
 
-            # Single-pass FFmpeg rendering
-            pipeline.render_clip_single_pass(
-                source_path=source_file,
-                out_clip_path=out_clip,
-                start_sec=clean_start,
-                end_sec=clean_end,
-                ass_path=ass_path,
-                hook_text=hook_line,
-                mode=req.style,
-                is_preview=False,
-                enable_sfx=req.enable_sfx,
-                watermark_text=req.watermark_text or settings.get("brand_watermark", "")
-            )
+                # Single-pass FFmpeg rendering
+                pipeline.render_clip_single_pass(
+                    source_path=source_file,
+                    out_clip_path=out_clip,
+                    start_sec=clean_start,
+                    end_sec=clean_end,
+                    ass_path=ass_path,
+                    hook_text=hook_line,
+                    mode=req.style,
+                    is_preview=False,
+                    enable_sfx=req.enable_sfx,
+                    watermark_text=req.watermark_text or settings.get("brand_watermark", "")
+                )
 
-            # Extract 3 cover frames
-            covers = pipeline.extract_cover_frames(out_clip, OUTPUTS_DIR)
+                # Extract 3 cover frames
+                covers = pipeline.extract_cover_frames(out_clip, OUTPUTS_DIR)
 
-            # Audit reel quality
-            quality = pipeline.audit_reel_quality(out_clip, dur)
+                # Audit reel quality
+                quality = pipeline.audit_reel_quality(out_clip, dur)
 
-            size_mb = f"{out_clip.stat().st_size / (1024 * 1024):.1f} MB" if out_clip.exists() else "0 MB"
+                size_mb = f"{out_clip.stat().st_size / (1024 * 1024):.1f} MB" if out_clip.exists() else "0 MB"
 
-            clip_record = {
-                "id": idx,
-                "vid_id": vid_id,
-                "filename": out_name,
-                "title": candidate.get("title", f"Clip {idx}"),
-                "title_options": candidate.get("title_options", [candidate.get("title")]),
-                "hook_line": hook_line,
-                "hook_options": candidate.get("hook_options", [hook_line]),
-                "viral_score": candidate.get("viral_score", 92),
-                "viral_reason": candidate.get("viral_reason", "High emotional hook"),
-                "duration": f"{int(dur)}s",
-                "duration_sec": dur,
-                "filesize": size_mb,
-                "style": req.style,
-                "caption_color": req.caption_color,
-                "covers": covers,
-                "quality": quality,
-                "platforms": candidate.get("platforms", {})
-            }
+                clip_record = {
+                    "id": idx,
+                    "vid_id": vid_id,
+                    "filename": out_name,
+                    "title": candidate.get("title", f"Clip {idx}"),
+                    "title_options": candidate.get("title_options", [candidate.get("title")]),
+                    "hook_line": hook_line,
+                    "hook_options": candidate.get("hook_options", [hook_line]),
+                    "viral_score": candidate.get("viral_score", 92),
+                    "viral_reason": candidate.get("viral_reason", "High emotional hook"),
+                    "duration": f"{int(dur)}s",
+                    "duration_sec": dur,
+                    "filesize": size_mb,
+                    "style": req.style,
+                    "caption_color": req.caption_color,
+                    "covers": covers,
+                    "quality": quality,
+                    "platforms": candidate.get("platforms", {})
+                }
 
-            # Save individual JSON metadata and TXT file
-            json_file = out_clip.with_suffix(".json")
-            json_file.write_text(json.dumps(clip_record, indent=2, ensure_ascii=False), encoding="utf-8")
+                # Save individual JSON metadata and TXT file
+                json_file = out_clip.with_suffix(".json")
+                json_file.write_text(json.dumps(clip_record, indent=2, ensure_ascii=False), encoding="utf-8")
 
-            txt_file = OUTPUTS_DIR / f"{out_clip.stem}_metadata.txt"
-            p_data = clip_record.get("platforms", {})
-            txt_content = f"""=== REEL METADATA (Clip #{idx}) ===
+                txt_file = OUTPUTS_DIR / f"{out_clip.stem}_metadata.txt"
+                p_data = clip_record.get("platforms", {})
+                txt_content = f"""=== REEL METADATA (Clip #{idx}) ===
 Title Options:
 1. {candidate.get('title_options', [''])[0] if candidate.get('title_options') else candidate.get('title')}
 2. {candidate.get('title_options', ['', ''])[1] if len(candidate.get('title_options', [])) > 1 else ''}
@@ -302,16 +307,23 @@ Hashtags: {' '.join(p_data.get('instagram', {}).get('hashtags', []))}
 Caption: {p_data.get('tiktok', {}).get('description', '')}
 Hashtags: {' '.join(p_data.get('tiktok', {}).get('hashtags', []))}
 """
-            txt_file.write_text(txt_content, encoding="utf-8")
+                txt_file.write_text(txt_content, encoding="utf-8")
 
-            # Progressive delivery event broadcast
-            job_manager.broadcast("clip_ready", clip_record)
-            return clip_record
+                # Progressive delivery event broadcast
+                job_manager.broadcast("clip_ready", clip_record)
+                return clip_record
+            except InterruptedError:
+                raise
+            except Exception as e:
+                log_event(f"Error rendering clip {idx}: {e}")
+                state["logs"].append(f"Error rendering clip {idx}: {e}")
+                return None
 
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, cpu_workers)) as executor:
             for rec in executor.map(render_single_clip, enumerate(clip_candidates, 1)):
-                results.append(rec)
+                if rec:
+                    results.append(rec)
 
         # Mark highest viral score as top pick
         if results:
@@ -464,7 +476,13 @@ def get_all_clips():
 @app.post("/api/process")
 def process_video(req: ProcessRequest, background_tasks: BackgroundTasks):
     if state["status"] == "running":
-        raise HTTPException(status_code=400, detail="Ek job pehle se chal raha hai. Thoda wait karein.")
+        if req.force or state.get("elapsed_sec", 0) > 180:
+            log_event("Force cancelling active job to start fresh request.")
+            job_manager.cancel_active_job()
+            time.sleep(0.6)
+            state["status"] = "idle"
+        else:
+            raise HTTPException(status_code=400, detail="Ek job pehle se chal raha hai. Thoda wait karein ya 'Kaam Roko (End)' dabayein.")
 
     # Apply presets
     if req.preset == "podcast":
