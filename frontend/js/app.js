@@ -1,4 +1,4 @@
-// Main Application Controller — iOS Claymorphic Navy Edition
+// Main Application Controller — X Gen Clips (iOS Claymorphism + Neomorphism)
 
 const App = {
   currentTab: 'home',
@@ -628,7 +628,7 @@ const App = {
             <button class="clay-btn clay-btn-primary btn-copy-all" onclick="SocialManager.copyAllForPlatform(${clip.id}, 'youtube')">
               📋 Sab Copy Karo
             </button>
-            <a href="/video/${clip.filename}" download class="clay-btn clay-btn-sky">
+            <a href="/video/${clip.filename}" download="${clip.filename.startsWith('xgenclips_') ? clip.filename : 'xgenclips_' + clip.filename}" class="clay-btn clay-btn-sky">
               💾 Download MP4
             </a>
             <button class="clay-btn" onclick="SocialManager.downloadZip('${clip.filename}')">

@@ -534,37 +534,39 @@
 }
 
 /* ========================================= */
-/* iOS-STYLE FLOATING PILL TAB BAR (BOTTOM)  */
+/* NEOMORPHIC FLOATING NAVIGATION BAR        */
 /* ========================================= */
 .ios-tab-bar {
   position: fixed;
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 90;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  background: rgba(28, 37, 65, 0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  gap: 10px;
+  padding: 9px 14px;
+  background: linear-gradient(145deg, #18223d, #111a33);
   border-radius: var(--radius-pill);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), inset 1px 1px 2px rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(58, 80, 107, 0.55);
+  /* Classic Soft Neomorphic Dual Drop Shadows */
+  box-shadow: 8px 10px 22px rgba(4, 8, 18, 0.75), -8px -8px 20px rgba(45, 63, 94, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 [data-theme="light"] .ios-tab-bar {
-  background: rgba(241, 226, 203, 0.92);
-  box-shadow: 0 12px 30px rgba(11, 19, 43, 0.15), inset 1px 1px 2px rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(209, 190, 159, 0.8);
+  background: linear-gradient(145deg, #fdf4e8, #e8d7c1);
+  box-shadow: 8px 10px 20px rgba(180, 160, 135, 0.45), -8px -8px 20px #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.85);
 }
 
 .ios-tab-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 20px;
+  padding: 10px 22px;
   border-radius: var(--radius-pill);
   font-family: var(--font-heading);
   font-size: 14px;
@@ -572,21 +574,34 @@
   color: var(--text-muted);
   cursor: pointer;
   user-select: none;
+  background: transparent;
   border: 1px solid transparent;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .ios-tab-item:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.05);
+  /* Soft raised neomorphic extrusion on hover */
+  box-shadow: 4px 5px 12px rgba(5, 10, 22, 0.6), -4px -4px 10px rgba(58, 80, 107, 0.3);
 }
 
-/* Selected Tab: Inset Well Shadow + Sky Blue */
+[data-theme="light"] .ios-tab-item:hover {
+  box-shadow: 4px 5px 12px rgba(180, 160, 135, 0.35), -4px -4px 10px #ffffff;
+}
+
+/* Selected Tab: Inset Neomorphic Sunken Well */
 .ios-tab-item.active {
-  background: var(--bg-inset);
+  background: linear-gradient(145deg, #0e162d, #141f39);
   color: var(--accent-sky);
-  box-shadow: var(--clay-inset);
-  border-color: rgba(91, 192, 222, 0.35);
+  box-shadow: inset 5px 5px 10px rgba(4, 7, 16, 0.8), inset -5px -5px 10px rgba(58, 80, 107, 0.35);
+  border: 1px solid rgba(91, 192, 222, 0.35);
+}
+
+[data-theme="light"] .ios-tab-item.active {
+  background: linear-gradient(145deg, #dfcfb8, #f8ebd9);
+  color: #0284C7;
+  box-shadow: inset 4px 4px 8px rgba(160, 140, 115, 0.45), inset -4px -4px 8px #ffffff;
+  border: 1px solid rgba(2, 132, 199, 0.3);
 }
 
 .ios-tab-icon {
@@ -594,6 +609,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.2s ease;
+}
+
+.ios-tab-item.active .ios-tab-icon {
+  transform: scale(1.08);
+  filter: drop-shadow(0 2px 6px rgba(91, 192, 222, 0.45));
 }
 
 /* Library View */

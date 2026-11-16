@@ -275,10 +275,13 @@ h1, h2, h3, h4 {
   font-size: 22px;
   font-weight: 800;
   color: var(--text-primary);
+  letter-spacing: -0.3px;
 }
 
-.brand-title span {
-  color: var(--accent-sky);
+.brand-title .brand-x {
+  color: #D97706;
+  font-weight: 900;
+  text-shadow: 0 2px 8px rgba(217, 119, 6, 0.35);
 }
 
 .header-actions {

@@ -1,6 +1,6 @@
 @echo off
 echo ===================================================
-echo     Clipper Studio AI - 1-Click Setup (Windows)
+echo     X Gen Clips - 1-Click Setup (Windows)
 echo ===================================================
 
 where ffmpeg >nul 2>nul

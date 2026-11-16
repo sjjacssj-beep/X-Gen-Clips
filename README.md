@@ -1,4 +1,4 @@
-# 🎬 X-Gen-Clips (Clipper Studio AI)
+# 🎬 X Gen Clips
 
 > **Autonomous Viral Short-Form (9:16) Video Generator** powered by Faster-Whisper, FFmpeg NVENC Hardware Acceleration, and Google Gemini Intelligence. Features an iOS-style Claymorphism interface with Camera Punch-Hole & Reel UI Safe-Zone auto-fitting.
 

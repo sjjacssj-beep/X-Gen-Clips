@@ -105,7 +105,7 @@ def generate_hormozi_ass(
         margin_v = 360 # Safely 360px below top edge, 100% clear of camera notch!
 
     header = f"""[Script Info]
-Title: Clipper Studio Trending Captions (Phone Safe)
+Title: X Gen Clips Trending Captions (Phone Safe)
 ScriptType: v4.00+
 WrapStyle: 0
 ScaledBorderAndShadow: yes

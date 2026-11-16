@@ -1,1 +1,1 @@
-# Clipper Studio AI Backend
+# X Gen Clips Backend

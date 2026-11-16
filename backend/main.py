@@ -55,7 +55,7 @@ if ENV_FILE.exists():
             k, v = line.split("=", 1)
             os.environ[k.strip()] = v.strip().strip('"').strip("'")
 
-app = FastAPI(title="Clipper Studio AI API")
+app = FastAPI(title="X Gen Clips API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -206,7 +206,7 @@ def worker_process_job(req: ProcessRequest):
                                 "end": max(0.1, round(w_end - clean_start, 2))
                             })
 
-            ass_path = OUTPUTS_DIR / f"clip_{vid_id}_{idx}.ass"
+            ass_path = OUTPUTS_DIR / f"xgenclips_{vid_id}_{idx}.ass"
             subtitle_engine.generate_hormozi_ass(
                 words=clip_words,
                 out_path=ass_path,
@@ -216,9 +216,10 @@ def worker_process_job(req: ProcessRequest):
                 font_name=settings.get("brand_font", "Baloo 2")
             )
 
-            # Sanitize clip filename
-            clean_title = re.sub(r'[\\/*?:"<>|]', "", candidate.get("title", f"Clip {idx}")).strip()
-            out_name = f"clip_{vid_id}_{idx}_{clean_title[:32]}.mp4"
+            # Sanitize clip filename with prefix xgenclips_
+            clean_title = re.sub(r'[\\/*?:"<>|]', "", candidate.get("title", f"clip{idx}")).strip()
+            title_slug = re.sub(r'\s+', '_', clean_title[:32]).strip('_')
+            out_name = f"xgenclips_clip{idx}_{title_slug}.mp4" if title_slug else f"xgenclips_clip{idx}.mp4"
             out_clip = OUTPUTS_DIR / out_name
 
             hook_line = candidate.get("hook_line", "WATCH TILL END! 🔥")
@@ -340,7 +341,7 @@ def get_index():
     index_file = FRONTEND_DIR / "index.html"
     if index_file.exists():
         return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
-    return HTMLResponse("<h1>Clipper Studio AI Backend is Running</h1><p>Frontend loading...</p>")
+    return HTMLResponse("<h1>X Gen Clips Backend is Running</h1><p>Frontend loading...</p>")
 
 @app.get("/api/status")
 def get_status():
@@ -373,7 +374,13 @@ def get_video_info_endpoint(url: str):
 def get_all_clips():
     """Returns all rendered clips with rich social metadata."""
     clips = []
-    mp4_files = sorted(OUTPUTS_DIR.glob("clip*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
+    candidates = [
+        p for p in OUTPUTS_DIR.glob("*.mp4")
+        if (p.name.startswith("xgenclips_") or p.name.startswith("clip_"))
+        and not p.name.startswith("source_")
+        and not p.name.startswith("section_")
+    ]
+    mp4_files = sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)
     for idx, f in enumerate(mp4_files, 1):
         rec_file = f.with_suffix(".json")
         if rec_file.exists():
@@ -446,7 +453,8 @@ def resuggest_text(req: ResuggestRequest):
     """Regenerates titles, hook, description, and hashtags via Gemini without touching video."""
     target_rec = None
     target_file = None
-    for f in OUTPUTS_DIR.glob("clip_*.json"):
+    json_files = list(OUTPUTS_DIR.glob("xgenclips_*.json")) + list(OUTPUTS_DIR.glob("clip_*.json"))
+    for f in json_files:
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
             if (req.filename and d.get("filename") == req.filename) or (req.clip_id and d.get("id") == req.clip_id):

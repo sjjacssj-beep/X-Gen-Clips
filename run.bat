@@ -1,8 +1,8 @@
 @echo off
-title Clipper Studio AI Server (Port 9999)
+title X Gen Clips Server (Port 9999)
 cd /d "%~dp0"
 echo ===================================================
-echo     Starting Clipper Studio AI on Port 9999...
+echo     Starting X Gen Clips on Port 9999...
 echo ===================================================
 
 if exist ".venv\Scripts\python.exe" (
