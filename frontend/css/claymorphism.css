@@ -1,0 +1,318 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&display=swap');
+
+:root {
+  --font-heading: 'Baloo 2', cursive, sans-serif;
+  --font-body: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* NEW PALETTE: Deep Navy & Sand (Dark Default) */
+  --bg-primary: #0B132B;       /* Deepest Navy */
+  --bg-secondary: #121C38;     /* Slightly elevated Navy */
+  --bg-card: #1C2541;          /* Card / Surface */
+  --bg-inset: #0F172E;         /* Recessed Inset Well */
+  --border-muted: #3A506B;     /* Muted Borders & Dividers */
+  
+  --text-primary: #F4D6B0;     /* Sand Text */
+  --text-secondary: #C2D0E0;   /* Clean light slate */
+  --text-muted: #6B82A0;       /* Secondary muted */
+
+  --accent-sky: #5BC0DE;        /* Sky Blue Primary Accent */
+  --accent-sky-glow: rgba(91, 192, 222, 0.35);
+  --accent-orange: #D97706;     /* Main CTA Orange */
+  --accent-orange-hover: #F59E0B;
+  --accent-orange-text: #0B132B; /* Deep Navy Text for Orange CTA */
+
+  /* iOS Claymorphism 3D Shadows - Dark Navy */
+  --clay-shadow: 12px 16px 30px rgba(0, 0, 0, 0.55), -8px -8px 22px rgba(58, 80, 107, 0.28);
+  --clay-shadow-sm: 6px 8px 18px rgba(0, 0, 0, 0.5), -4px -4px 14px rgba(58, 80, 107, 0.22);
+  --clay-highlight: inset 1px 1px 3px rgba(255, 255, 255, 0.18), inset -2px -2px 5px rgba(0, 0, 0, 0.5);
+  --clay-inset: inset 6px 6px 14px rgba(0, 0, 0, 0.65), inset -4px -4px 10px rgba(58, 80, 107, 0.25);
+
+  --radius-xl: 32px;
+  --radius-lg: 24px;
+  --radius-md: 18px;
+  --radius-sm: 12px;
+  --radius-pill: 9999px;
+}
+
+[data-theme="light"] {
+  /* NEW PALETTE: Sand-tinted Light Mode */
+  --bg-primary: #FAF0E0;       /* Sand-tinted Warm Canvas */
+  --bg-secondary: #F1E2CB;     /* Deeper Sand Canvas */
+  --bg-card: #FFFFFF;          /* Pure White Card */
+  --bg-inset: #EAD9BF;         /* Inset Sand Well */
+  --border-muted: #D1BE9F;     /* Warm Muted Borders */
+
+  --text-primary: #0B132B;     /* Deep Navy Primary Text */
+  --text-secondary: #3A506B;   /* Slate Navy Secondary */
+  --text-muted: #7E705A;       /* Muted Brown/Sand */
+
+  --accent-sky: #0284C7;        /* Deeper Sky Blue for Light Mode */
+  --accent-sky-glow: rgba(2, 132, 199, 0.25);
+  --accent-orange: #D97706;     /* Orange Accent */
+  --accent-orange-hover: #B45309;
+  --accent-orange-text: #FFFFFF;
+
+  --clay-shadow: 10px 14px 28px rgba(11, 19, 43, 0.12), -10px -10px 24px #FFFFFF;
+  --clay-shadow-sm: 5px 8px 16px rgba(11, 19, 43, 0.1), -6px -6px 14px #FFFFFF;
+  --clay-highlight: inset 1px 1px 2px rgba(255, 255, 255, 0.9), inset -1px -1px 3px rgba(11, 19, 43, 0.08);
+  --clay-inset: inset 5px 5px 12px rgba(11, 19, 43, 0.15), inset -4px -4px 10px #FFFFFF;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-body);
+  transition: background-color 0.25s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 34px);
+}
+
+/* Clay Cards */
+.clay-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--clay-shadow);
+  border: 1px solid rgba(58, 80, 107, 0.4);
+  position: relative;
+}
+
+.clay-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--clay-highlight);
+  pointer-events: none;
+}
+
+/* Clay Buttons */
+.clay-btn {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  box-shadow: var(--clay-shadow-sm);
+  padding: 12px 22px;
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: relative;
+  user-select: none;
+  text-decoration: none;
+}
+
+.clay-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--clay-highlight);
+  pointer-events: none;
+}
+
+.clay-btn:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-sky);
+  box-shadow: var(--clay-shadow);
+}
+
+.clay-btn:active, .clay-btn.active {
+  transform: translateY(1px);
+  box-shadow: var(--clay-inset);
+}
+
+/* Primary Button: Orange Gradient + Deep Navy Text */
+.clay-btn-primary {
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+  color: var(--accent-orange-text) !important;
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  box-shadow: 0 10px 24px rgba(217, 119, 6, 0.4), var(--clay-shadow-sm);
+  font-weight: 800;
+}
+
+.clay-btn-primary:hover {
+  background: linear-gradient(135deg, #FBBF24 0%, #EA580C 100%);
+  box-shadow: 0 14px 30px rgba(217, 119, 6, 0.55), var(--clay-shadow);
+  transform: translateY(-2px);
+}
+
+/* Secondary Button: Sky Blue Accent */
+.clay-btn-sky {
+  background: var(--bg-inset);
+  color: var(--accent-sky);
+  border: 1px solid rgba(91, 192, 222, 0.4);
+}
+
+.clay-btn-sky:hover {
+  background: rgba(91, 192, 222, 0.15);
+  border-color: var(--accent-sky);
+  box-shadow: 0 0 16px var(--accent-sky-glow);
+}
+
+/* Inset Wells & Inputs */
+.clay-inset-box {
+  background: var(--bg-inset);
+  border-radius: var(--radius-md);
+  box-shadow: var(--clay-inset);
+  border: 1px solid rgba(58, 80, 107, 0.3);
+}
+
+.clay-input {
+  width: 100%;
+  background: var(--bg-inset);
+  border-radius: var(--radius-md);
+  box-shadow: var(--clay-inset);
+  border: 1px solid rgba(58, 80, 107, 0.4);
+  color: var(--text-primary);
+  padding: 14px 20px;
+  font-size: 16px;
+  font-family: var(--font-body);
+  outline: none;
+}
+
+.clay-input:focus {
+  border-color: var(--accent-sky);
+  box-shadow: var(--clay-inset), 0 0 0 3px var(--accent-sky-glow);
+}
+
+/* Clay Pills */
+.clay-pill {
+  background: var(--bg-card);
+  box-shadow: var(--clay-shadow-sm);
+  border: 1px solid rgba(58, 80, 107, 0.4);
+  border-radius: var(--radius-pill);
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+  color: var(--text-secondary);
+}
+
+.clay-pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--clay-highlight);
+  pointer-events: none;
+}
+
+.clay-pill.selected {
+  background: var(--bg-inset);
+  box-shadow: var(--clay-inset);
+  color: var(--accent-sky);
+  border: 1px solid var(--accent-sky);
+}
+
+/* Typography */
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+/* Top Navigation Bar */
+.app-header {
+  padding: 16px 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(28, 37, 65, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(58, 80, 107, 0.4);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+[data-theme="light"] .app-header {
+  background: rgba(241, 226, 203, 0.88);
+  border-bottom: 1px solid rgba(209, 190, 159, 0.6);
+}
+
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.brand-icon {
+  width: 42px;
+  height: 42px;
+  background: linear-gradient(135deg, #5BC0DE, #1C2541);
+  border: 1px solid rgba(91, 192, 222, 0.4);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.brand-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.brand-title span {
+  color: var(--accent-sky);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-pill {
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.status-pill.connected {
+  background: rgba(91, 192, 222, 0.15);
+  color: #5BC0DE;
+  border: 1px solid rgba(91, 192, 222, 0.35);
+}
+
+.status-pill.not-connected {
+  background: rgba(217, 119, 6, 0.15);
+  color: #D97706;
+  border: 1px solid rgba(217, 119, 6, 0.35);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}

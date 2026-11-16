@@ -1,0 +1,39 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Environment and Secrets (CRITICAL: Do NOT commit API keys)
+.env
+*.env
+.env.local
+!.env.example
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Output media & cache (generated local videos)
+outputs/*.mp4
+outputs/*.wav
+outputs/*.ass
+outputs/*.srt
+outputs/*.json
+outputs/*.txt
+!outputs/.gitkeep
+output/
+
+# Logs & temp
+logs.txt
+*.log
+.tmp/
+temp/
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

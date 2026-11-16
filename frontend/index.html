@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="hi" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Clipper Studio AI — Viral Short-Form Video Engine</title>
+  <link rel="stylesheet" href="/css/claymorphism.css?v=3.0">
+  <link rel="stylesheet" href="/css/components.css?v=3.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <a href="#" onclick="App.switchTab('home'); return false;" class="brand-logo">
+      <div class="brand-icon">🎬</div>
+      <div class="brand-title">Clipper<span>Studio</span> AI</div>
+    </a>
+
+    <div class="header-actions">
+      <div id="headerStatusBadge" class="status-pill not-connected">
+        <span class="status-dot"></span> Checking...
+      </div>
+      <button class="clay-btn" onclick="App.toggleTheme()" title="Toggle Light/Dark Theme">
+        🌓 Theme
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-container">
+
+    <!-- ========================================== -->
+    <!-- VIEW 1: HOME (Clip Creation & Results)     -->
+    <!-- ========================================== -->
+    <div id="view-home" class="view-section active">
+
+      <!-- Hero Card -->
+      <section class="clay-card hero-card">
+        <div class="hero-header">
+          <h1 class="hero-title">Ek Click Mein <span>Viral Reels</span> Banao</h1>
+          <p class="hero-subtitle">YouTube link ya local video dalo — Tagdi editing, phone-safe captions aur complete social kit.</p>
+        </div>
+
+        <!-- Main Input Group -->
+        <div class="input-group">
+          <div class="input-wrapper">
+            <span class="input-icon">🔗</span>
+            <input type="text" id="videoUrlInput" class="clay-input url-input" placeholder="YouTube link yahan paste karo (e.g. https://youtu.be/...)" autocomplete="off">
+            <button id="clearUrlBtn" class="clear-btn">✕</button>
+          </div>
+          <button id="mainSubmitBtn" class="clay-btn clay-btn-primary submit-btn">
+            🚀 Clips Banao
+          </button>
+        </div>
+
+        <!-- Instant Link Preview Card -->
+        <div id="linkPreviewCard" class="link-preview-card">
+          <img id="previewThumb" class="preview-thumb" src="" alt="Thumbnail">
+          <div class="preview-info">
+            <div id="previewTitle" class="preview-title">Video Loading...</div>
+            <div id="previewMeta" class="preview-meta">Duration: --</div>
+          </div>
+        </div>
+
+        <!-- Presets Bar -->
+        <div class="presets-bar">
+          <div class="preset-list">
+            <div class="clay-pill preset-pill" data-preset="podcast" onclick="App.selectPreset('podcast')">
+              🎙️ Podcast (45-55s)
+            </div>
+            <div class="clay-pill preset-pill" data-preset="motivation" onclick="App.selectPreset('motivation')">
+              🔥 Motivation (30-45s)
+            </div>
+            <div class="clay-pill preset-pill" data-preset="comedy" onclick="App.selectPreset('comedy')">
+              😂 Comedy (20-35s)
+            </div>
+          </div>
+
+          <button id="toggleOptionsBtn" class="clay-btn" style="padding: 8px 16px; font-size: 13px;">
+            ⚙️ Aur Options ▾
+          </button>
+        </div>
+
+        <!-- Collapsible Advanced Options -->
+        <div id="optionsDrawer" class="options-drawer">
+          <div class="options-grid">
+            <div class="option-group">
+              <label class="option-label">Video Style</label>
+              <select id="optStyle" class="option-select">
+                <option value="cinematic_blur">Cinematic Blur (9:16)</option>
+                <option value="vibrant">Vibrant 9:16</option>
+                <option value="film_mood">Film Mood</option>
+                <option value="crisp_crop">Crisp Crop</option>
+              </select>
+            </div>
+
+            <div class="option-group">
+              <label class="option-label">🔥 Trending Caption Style</label>
+              <select id="optColor" class="option-select">
+                <option value="hormozi">🌟 Hormozi Gold Pop (Trending #1)</option>
+                <option value="mrbeast">🔥 MrBeast Impact Yellow</option>
+                <option value="neon_cyan">⚡ Cyberpunk Neon Cyan</option>
+                <option value="hot_pink">🌸 TikTok Viral Pink</option>
+                <option value="electric_mint">🍃 Electric Mint Pop</option>
+                <option value="clean_white">🔲 Minimalist Clean White</option>
+              </select>
+            </div>
+
+            <div class="option-group">
+              <label class="option-label">🛡️ Safe Zone & Position</label>
+              <select id="optPos" class="option-select">
+                <option value="bottom">🎯 Sweet Spot (Lower-Middle - Recommended)</option>
+                <option value="middle">📍 Exact Screen Center</option>
+                <option value="top">📷 Safe Upper (Below Camera Notch)</option>
+              </select>
+            </div>
+
+            <div class="option-group">
+              <label class="option-label">Clips Count</label>
+              <select id="optClipsCount" class="option-select">
+                <option value="1">1 Best Clip</option>
+                <option value="2">2 Clips</option>
+                <option value="3">3 Clips</option>
+              </select>
+            </div>
+
+            <div class="option-group">
+              <label class="option-label">Whisper Model</label>
+              <select id="optWhisper" class="option-select">
+                <option value="base">Base (Fast & Balanced)</option>
+                <option value="small">Small (High Accuracy)</option>
+                <option value="tiny">Tiny (Ultra Fast)</option>
+              </select>
+            </div>
+
+            <div class="option-group">
+              <label class="option-label">Duration Range (Sec)</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="number" id="optMinLen" class="clay-input" value="20" style="padding: 8px 12px; font-size: 14px;" title="Min seconds">
+                <input type="number" id="optMaxLen" class="clay-input" value="60" style="padding: 8px 12px; font-size: 14px;" title="Max seconds">
+              </div>
+            </div>
+
+            <div class="option-group">
+              <label class="option-label">Brand Watermark</label>
+              <input type="text" id="optWatermark" class="clay-input" placeholder="@yourhandle" style="padding: 8px 12px; font-size: 14px;">
+            </div>
+
+            <div class="option-group" style="justify-content: center;">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; margin-top: 18px;">
+                <input type="checkbox" id="optSfx" checked style="width: 18px; height: 18px;">
+                <span>Whoosh & Pop SFX</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Real-time Progress Bar -->
+      <section id="progressCard" class="clay-card progress-card">
+        <div class="progress-header">
+          <span id="progressStepText" class="progress-step-text">Starting pipeline...</span>
+          <span id="progressTimer" class="progress-timer">0s elapsed</span>
+        </div>
+        <div class="progress-bar-track">
+          <div id="progressBarFill" class="progress-bar-fill"></div>
+        </div>
+      </section>
+
+      <!-- Results Section -->
+      <section class="results-container">
+        <div class="results-header">
+          <h2 class="results-title">Tohfa Tayyar Hai (Generated Clips)</h2>
+        </div>
+
+        <!-- Clips Grid (Populated dynamically) -->
+        <div id="clipsGrid" class="clips-grid">
+          <!-- Rendered clips will appear here -->
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ========================================== -->
+    <!-- VIEW 2: LIBRARY (History & Past Projects)  -->
+    <!-- ========================================== -->
+    <div id="view-library" class="view-section">
+      <section class="clay-card library-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h2>📚 Projects & History Library</h2>
+            <p style="font-size: 14px; color: var(--text-secondary); margin-top: 4px;">Pehle ke generate kiye gaye clips aur projects.</p>
+          </div>
+          <button class="clay-btn" onclick="App.clearWorkspaceHistory()" style="color: #EF4444; border-color: rgba(239, 68, 68, 0.4);">
+            🗑️ Clear Workspace
+          </button>
+        </div>
+
+        <div id="historyListContainer" style="display: flex; flex-direction: column; gap: 16px; margin-top: 12px;">
+          <!-- History items will render here -->
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- VIEW 3: SETTINGS (Config, Brand & Health) -->
+    <!-- ========================================== -->
+    <div id="view-settings" class="view-section">
+      <section class="clay-card settings-view-card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h2>⚙️ Settings & Configuration</h2>
+            <p style="font-size: 14px; color: var(--text-secondary); margin-top: 4px;">Gemini API credentials, Brand kit aur System Diagnostics.</p>
+          </div>
+          <button class="clay-btn clay-btn-primary" onclick="App.saveFullSettings()">
+            💾 Save Settings
+          </button>
+        </div>
+
+        <div class="settings-grid-layout">
+          <!-- API & Model Card -->
+          <div class="clay-inset-box" style="padding: 24px; display: flex; flex-direction: column; gap: 18px;">
+            <h3 style="font-size: 18px; color: var(--accent-sky);">✨ Gemini API & Model</h3>
+
+            <div class="option-group">
+              <label class="option-label">Gemini API Key</label>
+              <div style="position: relative; display: flex; align-items: center;">
+                <input type="password" id="settingApiKey" class="clay-input" placeholder="Google AI Studio Key daalo..." style="padding-right: 48px;">
+                <button type="button" onclick="App.togglePasswordVisibility('settingApiKey')" style="position: absolute; right: 14px; background: none; border: none; font-size: 16px; cursor: pointer; color: var(--text-muted);">
+                  👁️
+                </button>
+              </div>
+              <span style="font-size: 12px; color: var(--text-muted);">
+                Key backend <code>.env</code> mein save hoti hai, browser ko wapas nahi bheji jaati.
+              </span>
+            </div>
+
+            <div class="option-group">
+              <label class="option-label">Model Selection</label>
+              <select id="settingModel" class="option-select">
+                <option value="gemini-3.7-flash">gemini-3.7-flash (Recommended • Latest)</option>
+                <option value="gemini-3.5-flash">gemini-3.5-flash (Fast & Free)</option>
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+              </select>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 4px;">
+              <button class="clay-btn clay-btn-sky" onclick="App.testGeminiConnection()" style="flex: 1;">
+                🔍 Test Connection
+              </button>
+            </div>
+            <div id="connectionTestResult" style="font-size: 13px; font-weight: 700; display: none;"></div>
+          </div>
+
+          <!-- Brand Kit & Preferences -->
+          <div class="clay-inset-box" style="padding: 24px; display: flex; flex-direction: column; gap: 18px;">
+            <h3 style="font-size: 18px; color: var(--accent-sky);">🎨 Brand Kit & Preferences</h3>
+
+            <div class="option-group">
+              <label class="option-label">Brand Watermark / Handle</label>
+              <input type="text" id="settingWatermark" class="clay-input" placeholder="@yourbrand">
+            </div>
+
+            <div class="option-group">
+              <label class="option-label">Brand Font</label>
+              <select id="settingFont" class="option-select">
+                <option value="Arial Black">Arial Black (High Impact)</option>
+                <option value="Baloo 2">Baloo 2 (Rounded Friendly)</option>
+                <option value="Nunito">Nunito (Modern Clean)</option>
+              </select>
+            </div>
+
+            <div class="option-group" style="margin-top: 6px;">
+              <label style="display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer;">
+                <input type="checkbox" id="settingAutoPaste" style="width: 18px; height: 18px;">
+                <span>Link paste karte hi auto render shuru karo</span>
+              </label>
+            </div>
+
+            <div class="option-group">
+              <label style="display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer;">
+                <input type="checkbox" id="settingAutoFolder" style="width: 18px; height: 18px;">
+                <span>Render khatam hone par output folder kholo</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Diagnostics Section -->
+        <div class="clay-inset-box" style="padding: 24px; display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h3 style="font-size: 18px; color: var(--accent-sky);">🛠️ System Health & Tools Diagnostic</h3>
+            <button class="clay-btn" onclick="App.refreshHealth()" style="font-size: 13px; padding: 6px 14px;">
+              🔄 Re-Check System
+            </button>
+          </div>
+
+          <div id="healthDetailsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+            <!-- Health cards dynamically populate -->
+          </div>
+        </div>
+      </section>
+    </div>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- iOS FLOATING PILL TAB BAR (BOTTOM)         -->
+  <!-- ========================================== -->
+  <nav class="ios-tab-bar" id="iosTabBar">
+    <div class="ios-tab-item active" data-tab="home" onclick="App.switchTab('home')">
+      <span class="ios-tab-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </span>
+      <span>Home</span>
+    </div>
+
+    <div class="ios-tab-item" data-tab="library" onclick="App.switchTab('library')">
+      <span class="ios-tab-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>
+      </span>
+      <span>Library</span>
+    </div>
+
+    <div class="ios-tab-item" data-tab="settings" onclick="App.switchTab('settings')">
+      <span class="ios-tab-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </span>
+      <span>Settings</span>
+    </div>
+  </nav>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    <div>Clipper Studio AI • Local Windows Edition</div>
+    <div class="copyright-reminder">
+      ⚠️ <strong>Reminder:</strong> Third-party videos ka use karte waqt copyright laws aur fair use guidelines ka palan karein.
+    </div>
+  </footer>
+
+  <script src="/js/player.js?v=3.0"></script>
+  <script src="/js/social.js?v=3.0"></script>
+  <script src="/js/app.js?v=3.0"></script>
+</body>
+</html>

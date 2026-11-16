@@ -1,0 +1,21 @@
+{
+  "user_name": "Creator",
+  "model": "gemini-3.5-flash",
+  "theme": "light",
+  "auto_render_on_paste": true,
+  "auto_open_folder": false,
+  "brand_watermark": "",
+  "brand_font": "Baloo 2",
+  "brand_color": "hormozi",
+  "daily_quota_used": 3,
+  "name": "Creator",
+  "auto_render": false,
+  "language": "hinglish",
+  "preset": "podcast",
+  "preview_mode": false,
+  "enable_sfx": true,
+  "enable_hook": true,
+  "enable_zoom": true,
+  "enable_progress": true,
+  "enable_loudnorm": true
+}
