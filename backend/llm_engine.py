@@ -73,10 +73,10 @@ DEFAULT_PROVIDERS = {
         "enabled": True,
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "api_key": "",
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3.8-flash",
         "max_context": 128000,
         "is_local": False,
-        "description": "Google Gemini 2.5 Flash with massive context window.",
+        "description": "Google Gemini 3.8 Flash with massive context window.",
         "status": "ready",
         "last_error": "",
         "quota_used": 0
@@ -84,6 +84,14 @@ DEFAULT_PROVIDERS = {
 }
 
 DEFAULT_PRIORITY = ["ollama", "groq", "cerebras", "openrouter", "gemini"]
+
+def clean_json_text(text: str) -> str:
+    cleaned = text.strip()
+    if "```json" in cleaned:
+        cleaned = cleaned.split("```json")[1].split("```")[0].strip()
+    elif "```" in cleaned:
+        cleaned = cleaned.split("```")[1].split("```")[0].strip()
+    return cleaned.strip()
 
 def get_cache_path(prompt: str, model: str) -> Path:
     h = hashlib.sha256(f"{model}:{prompt}".encode("utf-8")).hexdigest()
@@ -186,8 +194,9 @@ class LLMProviderChain:
         }
 
         t0 = time.time()
+        timeout = 60.0 if prov.get("is_local") else 20.0
         try:
-            with httpx.Client(timeout=15.0) as client:
+            with httpx.Client(timeout=timeout) as client:
                 endpoint = f"{base_url}/chat/completions"
                 resp = client.post(endpoint, json=test_payload, headers=headers)
                 latency_ms = int((time.time() - t0) * 1000)
@@ -267,8 +276,9 @@ class LLMProviderChain:
             if response_format:
                 payload["response_format"] = response_format
 
+            timeout = 120.0 if prov.get("is_local") else 45.0
             try:
-                with httpx.Client(timeout=45.0) as client:
+                with httpx.Client(timeout=timeout) as client:
                     endpoint = f"{base_url}/chat/completions"
                     resp = client.post(endpoint, json=payload, headers=headers)
 
@@ -391,6 +401,168 @@ Return ONLY a valid JSON array of evaluated candidates."""
             c_copy["emoji_plan"] = ["🔥", "💀", "😱"]
             results.append(c_copy)
         return sanitize_metadata_obj(results)
+
+    def pick_clips_and_metadata(
+        self,
+        transcript_segments: List[Dict[str, Any]],
+        num_clips: int = 1,
+        min_len: int = 20,
+        max_len: int = 60,
+        language: str = "hinglish"
+    ) -> List[Dict[str, Any]]:
+        """
+        Picks viral clips and generates complete metadata using the active LLM provider chain
+        (prioritizing local Ollama qwen2.5:3b). Falls back to heuristic generation if all providers fail.
+        """
+        from . import gemini_engine
+
+        # Format transcript with timestamps
+        sample_text = []
+        for s in transcript_segments:
+            start_m = int(s["start"] // 60)
+            start_s = int(s["start"] % 60)
+            sample_text.append(f"[{start_m:02d}:{start_s:02d}] {s.get('text', '')}")
+        full_transcript_str = "\n".join(sample_text)
+
+        # Context truncation guard: keep up to 28,000 characters so local Ollama / models stay well within limits
+        if len(full_transcript_str) > 28000:
+            full_transcript_str = full_transcript_str[:28000] + "\n...[Transcript truncated for context window]..."
+
+        if str(language).lower() in ("english", "en"):
+            lang_directive = """4. Language tone: Strictly FLUENT ENGLISH. All titles, hooks, descriptions, and hashtags must be in English.
+5. SCRIPT ENFORCEMENT: Never output Urdu or Hindi script; use English."""
+            sys_msg = "You are a master viral YouTube Shorts & Reels producer. Return strictly valid JSON array in fluent English."
+        else:
+            lang_directive = """4. Language tone: Strictly NATURAL ROMAN HINGLISH (English alphabet only, e.g. 'Bhai ye scene dekho', 'Lucia karte use', 'Ek tagda hits').
+5. SCRIPT ENFORCEMENT: ABSOLUTELY NEVER output Urdu, Arabic, or Perso-Arabic script. Urdu language is completely banned. All Hindi and gaming speech must use the standard Latin English alphabet."""
+            sys_msg = "You are a master viral YouTube Shorts & Reels producer. Return strictly valid JSON array in Roman Hinglish. Never use Urdu/Arabic characters."
+
+        prompt = f"""Analyze the following transcript from a video. Pick the TOP {num_clips} most viral, engaging, funny, or insightful continuous moments suitable for vertical short-form reels (YouTube Shorts, Instagram Reels, TikTok).
+
+Rules:
+1. Duration: Each clip MUST be between {min_len} and {max_len} seconds.
+2. Complete thought: Snap start and end to natural sentence boundaries (NEVER cut off mid-sentence).
+3. Viral Hook: The first 3 seconds must grab instant attention.
+{lang_directive}
+6. Return strictly valid JSON array without any markdown formatting or commentary.
+
+JSON Schema:
+[
+  {{
+    "start": 12.5,
+    "end": 42.0,
+    "title": "Main Curiosity Title (Max 60 chars)",
+    "title_options": [
+      "Curiosity Title 1 (Max 60 chars)",
+      "Curiosity Title 2 (Question format)",
+      "Curiosity Title 3 (Relatable punchline)"
+    ],
+    "hook_line": "HOOK LINE FOR FIRST 3 SECONDS (ALL CAPS)",
+    "hook_options": [
+      "HOOK OPTION 1 (Question/Surprise)",
+      "HOOK OPTION 2 (Relatable Statement)",
+      "HOOK OPTION 3 (Curiosity Gap)"
+    ],
+    "viral_score": 95,
+    "viral_reason": "One punchy line explaining why this clip will retain viewers",
+    "platforms": {{
+      "youtube": {{
+        "title": "High CTR YouTube Title #shorts",
+        "description": "2-3 lines engaging description + CTA (Subscribe for daily clips!)",
+        "hashtags": ["#shorts", "#viral", "#comedy", "#relatable"]
+      }},
+      "instagram": {{
+        "title": "Instagram Reels Caption",
+        "description": "Relatable caption + Tag a friend CTA",
+        "hashtags": ["#reelsindia", "#explore", "#viralreels", "#funny"]
+      }},
+      "tiktok": {{
+        "title": "TikTok Catchy Title",
+        "description": "Short punchy caption + Follow for Part 2",
+        "hashtags": ["#fyp", "#trending", "#viral", "#relatable"]
+      }}
+    }}
+  }}
+]
+
+Transcript:
+{full_transcript_str}
+"""
+        messages = [
+            {"role": "system", "content": sys_msg},
+            {"role": "user", "content": prompt}
+        ]
+
+        logger.info(f"Generating viral clips using LLM chain (priority: {self.priority})...")
+        content, prov_used = self.generate_chat_completion(
+            messages,
+            temperature=0.7,
+            use_cache=True
+        )
+
+        if content:
+            try:
+                cleaned = clean_json_text(content)
+                parsed = json.loads(cleaned)
+                if isinstance(parsed, dict):
+                    for k in ("clips", "candidates", "data", "results"):
+                        if k in parsed and isinstance(parsed[k], list):
+                            parsed = parsed[k]
+                            break
+                    if isinstance(parsed, dict):
+                        parsed = [parsed]
+                if isinstance(parsed, list) and len(parsed) > 0:
+                    validated = []
+                    for idx, c in enumerate(parsed):
+                        if not isinstance(c, dict):
+                            continue
+                        c["id"] = idx + 1
+                        c["start"] = max(0.0, float(c.get("start", 0.0)))
+                        c["end"] = max(c["start"] + 5.0, float(c.get("end", c["start"] + 30.0)))
+                        c["duration"] = round(c["end"] - c["start"], 2)
+                        validated.append(c)
+                    if validated:
+                        logger.info(f"Successfully generated {len(validated)} clips with provider '{prov_used}'")
+                        return sanitize_metadata_obj(validated)
+            except Exception as e:
+                logger.warning(f"Failed to parse LLM JSON from '{prov_used}': {e}. Falling back to heuristic clips.")
+
+        # Fallback to heuristic clips
+        logger.info("Using algorithmic heuristic clip selection fallback...")
+        return gemini_engine.generate_heuristic_clips(transcript_segments, num_clips, min_len, max_len)
+
+    def get_active_provider_status(self) -> Dict[str, Any]:
+        """Returns the status and connectivity of the highest priority enabled provider."""
+        self.load_config()
+        for p_id in self.priority:
+            prov = self.providers.get(p_id)
+            if not prov or not prov.get("enabled"):
+                continue
+
+            # Skip non-local providers with empty API key
+            if not prov.get("is_local") and not prov.get("api_key"):
+                continue
+
+            test_res = self.test_provider(p_id)
+            return {
+                "provider": p_id,
+                "name": prov.get("name", p_id.title()),
+                "model": prov.get("model", ""),
+                "status": "connected" if test_res["success"] else "error",
+                "latency_ms": test_res.get("latency_ms", 0),
+                "message": test_res.get("message", ""),
+                "is_local": prov.get("is_local", False)
+            }
+
+        return {
+            "provider": "none",
+            "name": "No Provider Configured",
+            "model": "",
+            "status": "not_configured",
+            "latency_ms": 0,
+            "message": "Settings mein ja kar AI Provider enable karein.",
+            "is_local": False
+        }
 
 # Singleton chain instance
 llm_chain = LLMProviderChain()

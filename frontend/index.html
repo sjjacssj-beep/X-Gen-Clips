@@ -31,7 +31,7 @@
         <span id="headerWorkText" class="header-work-text">Kaam chal raha hai...</span>
         <button class="btn-cancel-header" onclick="App.cancelJob()" title="Kaam roko">🛑 End</button>
       </div>
-      <div id="headerStatusBadge" class="status-pill not-connected">
+      <div id="headerStatusBadge" class="status-pill not-connected" onclick="App.openSettings()" style="cursor: pointer;" title="Click to view and configure AI Providers">
         <span class="status-dot"></span> Checking...
       </div>
       <button class="clay-btn" onclick="App.toggleTheme()" title="Toggle Light/Dark Theme">
@@ -503,8 +503,8 @@
     </div>
   </footer>
 
-  <script src="/js/player.js?v=4.4"></script>
-  <script src="/js/social.js?v=4.4"></script>
-  <script src="/js/app.js?v=4.4"></script>
+  <script src="/js/player.js?v=4.5"></script>
+  <script src="/js/social.js?v=4.5"></script>
+  <script src="/js/app.js?v=4.5"></script>
 </body>
 </html>

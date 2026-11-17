@@ -223,17 +223,23 @@ def worker_process_job(req: ProcessRequest):
         update_prog(12, f"Downloading audio (16kHz mono, {free_gb}GB free)...")
         wav_path, vid_id = pipeline.download_audio_16k(req.url, OUTPUTS_DIR)
 
-        # Step 2: Transcribe only audio stream with Voice Recognition
+        # Step 2: Transcribe only audio stream with Voice Recognition & Real-Time Progress
         update_prog(28, f"Recognizing voice & transcribing audio ({req.whisper_model})...")
         transcript, recognized_voice = pipeline.transcribe_audio(
-            wav_path, req.whisper_model, OUTPUTS_DIR, vid_id, target_language=req.language
+            wav_path,
+            req.whisper_model,
+            OUTPUTS_DIR,
+            vid_id,
+            target_language=req.language,
+            progress_callback=update_prog,
+            cancel_event=job_manager.cancel_event
         )
         effective_language = recognized_voice if req.language == "auto" else req.language
         state["detected_language"] = effective_language
-        update_prog(40, f"Voice recognized as {effective_language.upper()} • Clean transcript ready!")
+        update_prog(48, f"Voice recognized as {effective_language.upper()} • Clean transcript ready!")
 
-        # Step 3: Viral candidate selection using LLM Provider Chain / Gemini / Heuristics
-        update_prog(50, f"Selecting top viral clips (Target: {target_clips}) with AI Chain...")
+        # Step 3: Viral candidate selection using LLM Provider Chain (prioritizes Ollama qwen2.5:3b)
+        update_prog(50, f"Selecting top viral clips (Target: {target_clips}) with AI Engine...")
         has_speech = any(s.get("words") for s in transcript)
         if not has_speech or len(transcript) == 0:
             log_event("Speech not detected or clean audio: scanning audio energy peaks for action...")
@@ -261,12 +267,11 @@ def worker_process_job(req: ProcessRequest):
                 language=effective_language
             )
         else:
-            clip_candidates = gemini_engine.pick_clips_and_metadata(
+            clip_candidates = llm_chain.pick_clips_and_metadata(
                 transcript_segments=transcript,
                 num_clips=target_clips,
                 min_len=req.min_length,
                 max_len=req.max_length,
-                model_name=gemini_model,
                 language=effective_language
             )
 
@@ -746,9 +751,7 @@ def update_settings(req: SettingsRequest):
 
 @app.post("/api/check-connection")
 def check_connection_endpoint():
-    settings = load_settings()
-    model = settings.get("model", "gemini-3.5-flash")
-    return gemini_engine.check_connection(model=model)
+    return llm_chain.get_active_provider_status()
 
 @app.get("/api/health")
 def health_endpoint():

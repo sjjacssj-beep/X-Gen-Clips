@@ -24,6 +24,7 @@ __pycache__/
 
 # Output media & cache (generated local videos)
 outputs/*.mp4
+outputs/*.part
 outputs/*.wav
 outputs/*.webm
 outputs/*.ass

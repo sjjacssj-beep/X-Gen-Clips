@@ -608,15 +608,44 @@ const App = {
         body: JSON.stringify({ provider_id: providerId })
       });
       const data = await res.json();
-      if (data.status === 'ok') {
-        alert(`✓ Provider [${providerId}] TEST PASSED!\nLatency: ${data.latency_ms}ms\nResponse: "${data.test_response}"`);
+      if (data.success || data.status === 'ok') {
+        alert(`✓ Provider [${providerId}] TEST PASSED!\nModel: ${data.model || ''}\nLatency: ${data.latency_ms}ms\nMessage: ${data.message || 'Connected successfully'}`);
       } else {
-        alert(`❌ Provider [${providerId}] TEST FAILED:\n${data.error || data.detail}`);
+        alert(`❌ Provider [${providerId}] TEST FAILED:\n${data.message || data.error || data.detail || 'Connection failed'}`);
       }
       await this.loadLLMProviders();
+      await this.checkHealthBadge();
     } catch (e) {
       alert("Test error: " + e.message);
     }
+  },
+
+  async testAllLLMProviders() {
+    if (!this.llmConfig) return;
+    const priority = this.llmConfig.priority || [];
+    let msg = "LLM Providers Test Results:\n\n";
+    for (const pId of priority) {
+      const prov = this.llmConfig.providers[pId];
+      if (!prov || (!prov.enabled && !prov.is_local)) continue;
+      try {
+        const res = await fetch('/api/llm/test-provider', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider_id: pId })
+        });
+        const data = await res.json();
+        if (data.success || data.status === 'ok') {
+          msg += `✓ [${pId.toUpperCase()}]: OK (${data.latency_ms}ms) • ${data.model}\n`;
+        } else {
+          msg += `❌ [${pId.toUpperCase()}]: Failed (${data.message || data.error || 'Error'})\n`;
+        }
+      } catch (err) {
+        msg += `❌ [${pId.toUpperCase()}]: ${err.message}\n`;
+      }
+    }
+    alert(msg);
+    await this.loadLLMProviders();
+    await this.checkHealthBadge();
   },
 
   async saveLLMKey(providerId, apiKey) {
@@ -989,15 +1018,22 @@ const App = {
 
   async checkHealthBadge() {
     const badge = document.getElementById('headerStatusBadge');
+    if (!badge) return;
     try {
       const res = await fetch('/api/check-connection', { method: 'POST' });
       const data = await res.json();
       if (data.status === 'connected') {
         badge.className = 'status-pill connected';
-        badge.innerHTML = `<span class="status-dot"></span> Gemini Ready (${data.latency_ms}ms)`;
+        const pName = data.name || (data.provider === 'ollama' ? 'Ollama' : (data.provider ? data.provider.toUpperCase() : 'AI'));
+        const mName = data.model ? ` (${data.model})` : '';
+        const lat = data.latency_ms ? ` (${data.latency_ms}ms)` : '';
+        badge.innerHTML = `<span class="status-dot"></span> ${pName}${mName} Ready${lat}`;
+        badge.title = `${data.message || 'Ready'} - Click to configure AI settings`;
       } else {
         badge.className = 'status-pill not-connected';
-        badge.innerHTML = `<span class="status-dot"></span> Gemini Not Ready`;
+        const pName = data.name || (data.provider === 'ollama' ? 'Ollama' : 'AI Engine');
+        badge.innerHTML = `<span class="status-dot"></span> ${pName} Not Ready`;
+        badge.title = `${data.message || 'Not Connected'} - Click to configure AI settings`;
       }
     } catch (e) {
       badge.className = 'status-pill not-connected';

@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Callable
 
 from .system_diag import detect_optimal_encoder
 from .face_tracker import compute_face_center_x
@@ -155,11 +155,13 @@ def transcribe_audio(
     model_name: str,
     out_dir: Path,
     vid_id: str,
-    target_language: str = "auto"
+    target_language: str = "auto",
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+    cancel_event: Optional[Any] = None
 ) -> Tuple[List[Dict[str, Any]], str]:
     """
     Transcribes 16kHz audio with faster-whisper, performs voice language recognition,
-    strictly suppresses Urdu/Arabic tokens, and caches clean results.
+    strictly suppresses Urdu/Arabic tokens, provides real-time progress callbacks, and caches clean results.
     Returns (results, detected_language).
     """
     cache_path = out_dir / f"transcript_{vid_id}.json"
@@ -172,16 +174,24 @@ def transcribe_audio(
             has_urdu = any(has_arabic_or_urdu(s.get("text", "")) for s in cached_data)
             if not has_urdu and len(cached_data) > 0:
                 detected_lang = meta_lang_file.read_text(encoding="utf-8").strip() if meta_lang_file.exists() else "hinglish"
+                if progress_callback:
+                    progress_callback(46, "Loaded clean transcript from cache!")
                 return cached_data, detected_lang
             else:
                 cache_path.unlink(missing_ok=True)
         except Exception:
             pass
 
+    if progress_callback:
+        progress_callback(28, f"Initializing {model_name} speech model...")
+
     from faster_whisper import WhisperModel
 
     cpu_threads = max(1, (os.cpu_count() or 4) - 1)
     whisper_model = WhisperModel(model_name, device="cpu", compute_type="int8", cpu_threads=cpu_threads)
+
+    if cancel_event and cancel_event.is_set():
+        raise InterruptedError("Process cancelled by user")
 
     # 1. Suppress all 347 Urdu/Arabic vocabulary tokens to physically block Urdu script
     urdu_suppress = get_urdu_suppress_tokens(whisper_model)
@@ -198,6 +208,9 @@ def transcribe_audio(
         whisper_lang = None
         initial_prompt = "Ye video Hindi, Hinglish ya English mein hai. Roman English alphabets only. No Urdu or Arabic script."
 
+    if progress_callback:
+        progress_callback(30, "Recognizing voice & transcribing audio stream...")
+
     # 3. Transcribe in a single pass with voice language auto-detection
     segments_gen, info = whisper_model.transcribe(
         str(wav_path),
@@ -210,6 +223,8 @@ def transcribe_audio(
         vad_parameters=dict(min_silence_duration_ms=400),
         condition_on_previous_text=False
     )
+
+    total_dur = getattr(info, "duration", 0) or 1.0
 
     # 4. Voice Language Recognition from audio
     raw_detected = (info.language or "").lower()
@@ -228,6 +243,18 @@ def transcribe_audio(
 
     results = []
     for s in segments_gen:
+        if cancel_event and cancel_event.is_set():
+            raise InterruptedError("Process cancelled by user")
+
+        if progress_callback:
+            curr_pct = min(48, int(30 + (s.end / total_dur) * 18))
+            sec_done = int(s.end)
+            sec_total = int(total_dur)
+            done_str = f"{sec_done // 60}:{sec_done % 60:02d}"
+            tot_str = f"{sec_total // 60}:{sec_total % 60:02d}"
+            pct_val = min(100, int((s.end / total_dur) * 100))
+            progress_callback(curr_pct, f"Transcribing audio ({done_str} / {tot_str} • {pct_val}%)...")
+
         # Ignore genuine non-speech or repetitive hallucinations
         if getattr(s, "no_speech_prob", 0) > 0.85:
             continue
