@@ -1109,7 +1109,8 @@ const App = {
       min_length: parseInt(document.getElementById('optMinLen')?.value || "20"),
       max_length: parseInt(document.getElementById('optMaxLen')?.value || "60"),
       enable_sfx: document.getElementById('optSfx')?.checked ?? true,
-      watermark_text: document.getElementById('optWatermark')?.value || ""
+      watermark_text: document.getElementById('optWatermark')?.value || "",
+      language: document.getElementById('optLanguage')?.value || "auto"
     };
 
     document.getElementById('progressCard').style.display = 'flex';

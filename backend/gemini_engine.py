@@ -3,6 +3,7 @@ import os
 import re
 import time
 from typing import List, Dict, Any, Tuple
+from .script_sanitizer import sanitize_metadata_obj, sanitize_urdu_to_hinglish
 
 DEFAULT_MODEL = "gemini-3.5-flash"
 MODEL_CANDIDATES = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.7-flash"]
@@ -87,6 +88,13 @@ def pick_clips_and_metadata(
     if len(full_transcript_str) > 120000:
         full_transcript_str = full_transcript_str[:120000] + "\n...[Transcript truncated for safety]..."
 
+    if str(language).lower() == "english":
+        lang_directive = """4. Language tone: Strictly FLUENT ENGLISH. All titles, hooks, descriptions, and hashtags must be in English.
+5. SCRIPT ENFORCEMENT: Never output Urdu or Hindi script; use English."""
+    else:
+        lang_directive = """4. Language tone: Strictly NATURAL ROMAN HINGLISH (English alphabet only, e.g. 'Bhai ye twist dekho', 'Lucia karte use', 'Ek tagda hits').
+5. SCRIPT ENFORCEMENT: ABSOLUTELY NEVER output Urdu, Arabic, or Perso-Arabic script. Urdu language is completely banned. All Hindi and gaming speech must use the standard Latin English alphabet."""
+
     prompt = f"""You are a world-class viral video editor (Alex Hormozi / MrBeast style).
 Analyze the following transcript from a video. Pick the TOP {num_clips} most viral, engaging, funny, or insightful continuous moments suitable for vertical short-form reels (YouTube Shorts, Instagram Reels, TikTok).
 
@@ -94,8 +102,8 @@ Rules:
 1. Duration: Each clip MUST be between {min_len} and {max_len} seconds.
 2. Complete thought: Snap start and end to natural sentence boundaries (NEVER cut off mid-sentence).
 3. Viral Hook: The first 3 seconds must grab instant attention.
-4. Language tone: {language.upper()} (Natural Roman Hinglish - e.g. "School dance ke naam par bada scam!").
-5. Return strictly valid JSON array without any markdown formatting.
+{lang_directive}
+6. Return strictly valid JSON array without any markdown formatting.
 
 JSON Schema:
 [
@@ -167,7 +175,7 @@ Transcript:
         clips = json.loads(cleaned)
         if not isinstance(clips, list):
             clips = [clips]
-        return clips
+        return sanitize_metadata_obj(clips)
     except Exception as parse_err:
         print(f"[Gemini] JSON parse error: {parse_err}. Falling back to heuristic clip selection.")
         return generate_heuristic_clips(transcript_segments, num_clips, min_len, max_len)
@@ -258,7 +266,7 @@ def generate_heuristic_clips(
                 }
             }
         })
-    return clips
+    return sanitize_metadata_obj(clips)
 
 def resuggest_metadata(
     clip_record: Dict[str, Any],
@@ -325,4 +333,4 @@ Return strictly a valid JSON object:
         return {}
 
     cleaned = clean_json_text(response.text)
-    return json.loads(cleaned)
+    return sanitize_metadata_obj(json.loads(cleaned))

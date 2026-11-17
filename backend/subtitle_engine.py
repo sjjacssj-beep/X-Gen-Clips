@@ -2,6 +2,7 @@ import math
 import unicodedata
 from pathlib import Path
 from typing import List, Dict, Any
+from .script_sanitizer import sanitize_urdu_to_hinglish, has_arabic_or_urdu
 
 STYLE_PALETTES = {
     "hormozi": {
@@ -151,12 +152,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not chunk:
             continue
 
-        # Clean and normalize words (NFC canonical composition prevents broken Devanagari matras/dotted circles)
+        # Clean and normalize words (sanitizes any Urdu to Roman Hinglish, NFC prevents broken matras)
         clean_words = []
         for w in chunk:
-            raw = unicodedata.normalize("NFC", str(w.get("word") or w.get("w", "")).strip())
-            # Uppercase ASCII words only; preserve Devanagari script integrity
-            clean_words.append(raw.upper() if raw.isascii() else raw)
+            raw_text = unicodedata.normalize("NFC", str(w.get("word") or w.get("w", "")).strip())
+            # Convert any Urdu script into clean Roman Hinglish
+            clean_raw = sanitize_urdu_to_hinglish(raw_text)
+            clean_words.append(clean_raw.upper() if clean_raw.isascii() else clean_raw)
         line_chars = sum(len(cw) for cw in clean_words) + (len(clean_words) - 1)
 
         # Dynamic Auto-Fit: If line is long (> 14 chars), scale font size so it NEVER overflows safe width (880px)

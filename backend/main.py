@@ -46,6 +46,7 @@ from .tagdi_editor import render_tagdi_clip
 from .bundle_importer import import_and_process_bundle_item, unpack_bundle_zip
 from .virality_engine import virality_engine
 from . import long_video_pipeline
+from .script_sanitizer import sanitize_urdu_to_hinglish, sanitize_metadata_obj, has_arabic_or_urdu
 from .queue_manager import job_manager, load_settings, save_settings, load_history, save_to_history, clear_workspace
 
 def log_event(msg: str):
@@ -116,7 +117,7 @@ class ProcessRequest(BaseModel):
     long_short_mode: bool = False  # Allows 60-175s
     enable_sfx: bool = True
     watermark_text: str = ""
-    language: str = "hinglish"
+    language: str = "auto"
     force: bool = False
 
 class CreateProfileRequest(BaseModel):
@@ -143,7 +144,7 @@ class BundleImportRequest(BaseModel):
 class ResuggestRequest(BaseModel):
     clip_id: Optional[int] = None
     filename: Optional[str] = ""
-    language: str = "hinglish"
+    language: str = "auto"
 
 class SettingsRequest(BaseModel):
     gemini_api_key: Optional[str] = None
@@ -222,9 +223,14 @@ def worker_process_job(req: ProcessRequest):
         update_prog(12, f"Downloading audio (16kHz mono, {free_gb}GB free)...")
         wav_path, vid_id = pipeline.download_audio_16k(req.url, OUTPUTS_DIR)
 
-        # Step 2: Transcribe only audio stream
-        update_prog(30, f"Transcribing audio with Whisper ({req.whisper_model})...")
-        transcript = pipeline.transcribe_audio(wav_path, req.whisper_model, OUTPUTS_DIR, vid_id)
+        # Step 2: Transcribe only audio stream with Voice Recognition
+        update_prog(28, f"Recognizing voice & transcribing audio ({req.whisper_model})...")
+        transcript, recognized_voice = pipeline.transcribe_audio(
+            wav_path, req.whisper_model, OUTPUTS_DIR, vid_id, target_language=req.language
+        )
+        effective_language = recognized_voice if req.language == "auto" else req.language
+        state["detected_language"] = effective_language
+        update_prog(40, f"Voice recognized as {effective_language.upper()} • Clean transcript ready!")
 
         # Step 3: Viral candidate selection using LLM Provider Chain / Gemini / Heuristics
         update_prog(50, f"Selecting top viral clips (Target: {target_clips}) with AI Chain...")
@@ -251,7 +257,8 @@ def worker_process_job(req: ProcessRequest):
                 }]
             clip_candidates = llm_chain.analyze_viral_candidates(
                 candidates=raw_candidates[:target_clips],
-                video_context={"title": f"Viral Reel {vid_id}", "category": "Gaming/Shorts"}
+                video_context={"title": f"Viral Reel {vid_id}", "category": "Gaming/Shorts"},
+                language=effective_language
             )
         else:
             clip_candidates = gemini_engine.pick_clips_and_metadata(
@@ -260,9 +267,10 @@ def worker_process_job(req: ProcessRequest):
                 min_len=req.min_length,
                 max_len=req.max_length,
                 model_name=gemini_model,
-                language=req.language
+                language=effective_language
             )
 
+        clip_candidates = sanitize_metadata_obj(clip_candidates)
         update_prog(65, f"Rendering {len(clip_candidates)} clips with Tagdi Edit Engine...")
 
         # Step 4: Render each clip
@@ -308,8 +316,9 @@ def worker_process_job(req: ProcessRequest):
                     font_name=settings.get("brand_font", "Nirmala UI")
                 )
 
-                # Sanitize clip filename with prefix xgenclips_
-                clean_title = re.sub(r'[\\/*?:"<>|]', "", candidate.get("title", f"clip{idx}")).strip()
+                # Sanitize clip filename with prefix xgenclips_ (Strictly Roman Hinglish/English, zero Urdu script)
+                clean_title = sanitize_urdu_to_hinglish(candidate.get("title", f"clip{idx}"))
+                clean_title = re.sub(r'[\\/*?:"<>|]', "", clean_title).strip()
                 title_slug = re.sub(r'\s+', '_', clean_title[:32]).strip('_')
                 out_name = f"xgenclips_clip{idx}_{title_slug}.mp4" if title_slug else f"xgenclips_clip{idx}.mp4"
                 out_clip = OUTPUTS_DIR / out_name
@@ -386,6 +395,7 @@ def worker_process_job(req: ProcessRequest):
                     "quality": quality,
                     "platforms": candidate.get("platforms", {})
                 }
+                clip_record = sanitize_metadata_obj(clip_record)
 
                 # Save individual JSON metadata and TXT file
                 json_file = out_clip.with_suffix(".json")
@@ -649,7 +659,10 @@ def resuggest_text(req: ResuggestRequest):
 
     settings = load_settings()
     model_name = settings.get("model", "gemini-3.5-flash")
-    fresh_meta = gemini_engine.resuggest_metadata(target_rec, model_name=model_name, language=req.language)
+    effective_lang = req.language
+    if effective_lang == "auto":
+        effective_lang = target_rec.get("detected_language") or "hinglish"
+    fresh_meta = gemini_engine.resuggest_metadata(target_rec, model_name=model_name, language=effective_lang)
 
     if fresh_meta:
         target_rec["hook_line"] = fresh_meta.get("hook_line", target_rec.get("hook_line"))
@@ -661,6 +674,7 @@ def resuggest_text(req: ResuggestRequest):
         if fresh_meta.get("title_options"):
             target_rec["title"] = fresh_meta["title_options"][0]
 
+        target_rec = sanitize_metadata_obj(target_rec)
         target_file.write_text(json.dumps(target_rec, indent=2, ensure_ascii=False), encoding="utf-8")
 
     return target_rec

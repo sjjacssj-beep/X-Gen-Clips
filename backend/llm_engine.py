@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 import httpx
+from .script_sanitizer import sanitize_metadata_obj, sanitize_urdu_to_hinglish
 
 logger = logging.getLogger("xgenclips.llm")
 
@@ -307,12 +308,20 @@ class LLMProviderChain:
     def analyze_viral_candidates(
         self,
         candidates: List[Dict[str, Any]],
-        video_context: Dict[str, Any]
+        video_context: Dict[str, Any],
+        language: str = "hinglish"
     ) -> List[Dict[str, Any]]:
         """
         Sends candidate moments to the active LLM chain to generate viral metadata.
         Guarantees structured JSON return.
         """
+        if str(language).lower() == "english":
+            lang_rule = "ALL titles, hooks, descriptions, and hashtags MUST be in fluent English."
+            sys_msg = "You are an elite short-form video viral retention expert. Respond strictly in valid JSON in fluent English."
+        else:
+            lang_rule = "ALL titles, hooks, descriptions, and hashtags MUST be in natural Roman Hinglish (English alphabet only, e.g. 'Bhai ye scene dekho', 'Lucia karte use'). ABSOLUTELY NEVER under any circumstances output Urdu, Arabic, or Perso-Arabic characters. Urdu language is completely banned."
+            sys_msg = "You are an elite short-form video viral retention expert. Respond strictly in valid JSON in Roman Hinglish. Never use Urdu/Arabic script."
+
         prompt = f"""You are a master viral YouTube Shorts & Reels producer.
 Analyze these {len(candidates)} candidate moments extracted from the video:
 Video Title: {video_context.get('title', 'Video')}
@@ -324,17 +333,20 @@ Candidates to evaluate:
 For each candidate, respond with a JSON array where each object has:
 - "id": candidate id (integer)
 - "viral_score": integer 1 to 100
-- "viral_reason": 1 punchy Hinglish line explaining why this moment will hook viewers
+- "viral_reason": 1 punchy line explaining why this moment will hook viewers
 - "hook_line": Attention-grabbing Curiosity Hook for the first 3 seconds (UPPERCASE)
-- "title_options": Array of 3 click-worthy curiosity titles (Hinglish/English mix, under 50 chars)
+- "title_options": Array of 3 click-worthy curiosity titles (under 50 chars)
 - "description": High-engagement social caption with CTA
 - "hashtags": Array of 8-12 viral hashtags (e.g. #shorts, #viral, #gaming)
 - "emoji_plan": 2-3 suitable emoji for word pop subtitles
 
+CRITICAL SCRIPT & LANGUAGE DIRECTIVE:
+{lang_rule}
+
 Return ONLY a valid JSON array of evaluated candidates."""
 
         messages = [
-            {"role": "system", "content": "You are an elite short-form video viral retention expert. Respond strictly in valid JSON."},
+            {"role": "system", "content": sys_msg},
             {"role": "user", "content": prompt}
         ]
 
@@ -355,9 +367,9 @@ Return ONLY a valid JSON array of evaluated candidates."""
                 
                 parsed = json.loads(clean_json)
                 if isinstance(parsed, dict) and "candidates" in parsed:
-                    return parsed["candidates"]
+                    return sanitize_metadata_obj(parsed["candidates"])
                 elif isinstance(parsed, list):
-                    return parsed
+                    return sanitize_metadata_obj(parsed)
             except Exception as e:
                 logger.error(f"Failed to parse LLM JSON from {prov_used}: {e}")
 
@@ -378,7 +390,7 @@ Return ONLY a valid JSON array of evaluated candidates."""
             c_copy["hashtags"] = ["#shorts", "#viral", "#gaming", "#trending", "#reels", "#fyp", "#desi"]
             c_copy["emoji_plan"] = ["🔥", "💀", "😱"]
             results.append(c_copy)
-        return results
+        return sanitize_metadata_obj(results)
 
 # Singleton chain instance
 llm_chain = LLMProviderChain()

@@ -14,6 +14,12 @@ import numpy as np
 
 from .llm_engine import llm_chain
 from .profile_manager import profile_manager
+from .script_sanitizer import (
+    sanitize_urdu_to_hinglish,
+    has_arabic_or_urdu,
+    get_urdu_suppress_tokens,
+    detect_voice_language
+)
 
 logger = logging.getLogger("xgenclips.long_video")
 
@@ -194,24 +200,29 @@ def transcribe_chunked_resumable(
         subprocess.run(cmd_slice, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
         try:
+            urdu_suppress = get_urdu_suppress_tokens(model)
             segments, _ = model.transcribe(
                 str(temp_chunk_wav),
                 beam_size=3,
                 word_timestamps=True,
-                vad_filter=True
+                vad_filter=True,
+                suppress_tokens=[-1] + urdu_suppress,
+                initial_prompt="Ye video Hindi aur Hinglish mein hai. Roman English alphabets mein transcribe karo. Kabhi bhi Urdu ya Arabic script mat likho. Examples: bhai, kya, kaise, dekho, mast, game, chal raha hai."
             )
             c_words = []
             for seg in segments:
                 if hasattr(seg, "words") and seg.words:
                     for w in seg.words:
+                        raw_w = w.word.strip()
                         c_words.append({
-                            "word": w.word.strip(),
+                            "word": sanitize_urdu_to_hinglish(raw_w),
                             "start": round(c_start + w.start, 2),
                             "end": round(c_start + w.end, 2)
                         })
                 else:
+                    raw_txt = seg.text.strip()
                     c_words.append({
-                        "word": seg.text.strip(),
+                        "word": sanitize_urdu_to_hinglish(raw_txt),
                         "start": round(c_start + seg.start, 2),
                         "end": round(c_start + seg.end, 2)
                     })

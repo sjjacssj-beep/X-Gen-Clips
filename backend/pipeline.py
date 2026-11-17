@@ -12,6 +12,13 @@ from typing import List, Dict, Any, Tuple, Optional
 from .system_diag import detect_optimal_encoder
 from .face_tracker import compute_face_center_x
 from .subtitle_engine import generate_hormozi_ass
+from .script_sanitizer import (
+    sanitize_transcript_segments,
+    sanitize_urdu_to_hinglish,
+    has_arabic_or_urdu,
+    detect_voice_language,
+    get_urdu_suppress_tokens
+)
 
 SOUNDS_DIR = Path(__file__).resolve().parent.parent / "sounds"
 
@@ -143,12 +150,31 @@ def download_audio_16k(url: str, out_dir: Path) -> Tuple[Path, str]:
 
     return wav_path, vid_id
 
-def transcribe_audio(wav_path: Path, model_name: str, out_dir: Path, vid_id: str) -> List[Dict[str, Any]]:
-    """Transcribes 16kHz audio with faster-whisper and caches results."""
+def transcribe_audio(
+    wav_path: Path,
+    model_name: str,
+    out_dir: Path,
+    vid_id: str,
+    target_language: str = "auto"
+) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    Transcribes 16kHz audio with faster-whisper, performs voice language recognition,
+    strictly suppresses Urdu/Arabic tokens, and caches clean results.
+    Returns (results, detected_language).
+    """
     cache_path = out_dir / f"transcript_{vid_id}.json"
+    meta_lang_file = out_dir / f"voice_lang_{vid_id}.txt"
+
     if cache_path.exists():
         try:
-            return json.loads(cache_path.read_text(encoding="utf-8"))
+            cached_data = json.loads(cache_path.read_text(encoding="utf-8"))
+            # If cached data contains any Urdu script, invalidate cache
+            has_urdu = any(has_arabic_or_urdu(s.get("text", "")) for s in cached_data)
+            if not has_urdu and len(cached_data) > 0:
+                detected_lang = meta_lang_file.read_text(encoding="utf-8").strip() if meta_lang_file.exists() else "hinglish"
+                return cached_data, detected_lang
+            else:
+                cache_path.unlink(missing_ok=True)
         except Exception:
             pass
 
@@ -157,8 +183,27 @@ def transcribe_audio(wav_path: Path, model_name: str, out_dir: Path, vid_id: str
     cpu_threads = max(1, (os.cpu_count() or 4) - 1)
     whisper_model = WhisperModel(model_name, device="cpu", compute_type="int8", cpu_threads=cpu_threads)
 
-    segments_gen, _ = whisper_model.transcribe(
+    # 1. Suppress all 347 Urdu/Arabic vocabulary tokens to physically block Urdu script
+    urdu_suppress = get_urdu_suppress_tokens(whisper_model)
+    suppress_tokens = [-1] + urdu_suppress
+
+    # 2. Dynamic language prompt based on voice recognition / user choice
+    if str(target_language).lower() in ("english", "en"):
+        whisper_lang = "en"
+        initial_prompt = "Clear natural English transcription with proper punctuation."
+    elif str(target_language).lower() in ("hinglish", "hi", "hindi"):
+        whisper_lang = None
+        initial_prompt = "Ye video Hindi aur Hinglish mein hai. Roman English alphabets mein transcribe karo. Kabhi bhi Urdu ya Arabic script mat likho. Examples: bhai, kya, kaise, dekho, mast, game, chal raha hai."
+    else:
+        whisper_lang = None
+        initial_prompt = "Ye video Hindi, Hinglish ya English mein hai. Roman English alphabets only. No Urdu or Arabic script."
+
+    # 3. Transcribe in a single pass with voice language auto-detection
+    segments_gen, info = whisper_model.transcribe(
         str(wav_path),
+        language=whisper_lang,
+        initial_prompt=initial_prompt,
+        suppress_tokens=suppress_tokens,
         word_timestamps=True,
         beam_size=2,
         vad_filter=True,
@@ -166,14 +211,29 @@ def transcribe_audio(wav_path: Path, model_name: str, out_dir: Path, vid_id: str
         condition_on_previous_text=False
     )
 
+    # 4. Voice Language Recognition from audio
+    raw_detected = (info.language or "").lower()
+    prob = float(info.language_probability or 0.0)
+    if str(target_language).lower() in ("english", "en"):
+        detected_lang = "english"
+    elif str(target_language).lower() in ("hinglish", "hi", "hindi"):
+        detected_lang = "hinglish"
+    else:
+        # Auto: If speaker is speaking English with high confidence, use English
+        if raw_detected == "en" and prob > 0.5:
+            detected_lang = "english"
+        else:
+            # Hindi, Urdu, Punjabi, etc. are recognized as Hinglish (URDU IS BANNED)
+            detected_lang = "hinglish"
+
     results = []
     for s in segments_gen:
-        # Ignore non-speech / hallucinated noise segments
-        if getattr(s, "no_speech_prob", 0) > 0.45:
+        # Ignore genuine non-speech or repetitive hallucinations
+        if getattr(s, "no_speech_prob", 0) > 0.85:
             continue
-        if getattr(s, "avg_logprob", 0) < -0.95:
+        if getattr(s, "avg_logprob", 0) < -3.5:
             continue
-        if getattr(s, "compression_ratio", 1.0) > 2.4:
+        if getattr(s, "compression_ratio", 1.0) > 3.0:
             continue
 
         raw_text = s.text.strip()
@@ -185,13 +245,25 @@ def transcribe_audio(wav_path: Path, model_name: str, out_dir: Path, vid_id: str
         if hasattr(s, "words") and s.words:
             for w in s.words:
                 w_str = w.word.strip()
-                if not w_str or getattr(w, "probability", 1.0) < 0.25:
+                if not w_str:
                     continue
                 words.append({
                     "word": w_str,
                     "start": round(w.start, 2),
                     "end": round(w.end, 2),
                     "probability": round(getattr(w, "probability", 1.0), 2)
+                })
+
+        # Safe fallback if word-level timestamps were not generated
+        if not words and raw_text:
+            seg_words = raw_text.split()
+            w_dur = (s.end - s.start) / max(1, len(seg_words))
+            for widx, sw in enumerate(seg_words):
+                words.append({
+                    "word": sw,
+                    "start": round(s.start + widx * w_dur, 2),
+                    "end": round(s.start + (widx + 1) * w_dur, 2),
+                    "probability": 0.8
                 })
 
         results.append({
@@ -201,8 +273,12 @@ def transcribe_audio(wav_path: Path, model_name: str, out_dir: Path, vid_id: str
             "words": words
         })
 
+    # Sanitize ALL Urdu / Arabic script into natural Roman Hinglish or English!
+    results = sanitize_transcript_segments(results)
+
+    meta_lang_file.write_text(detected_lang, encoding="utf-8")
     cache_path.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
-    return results
+    return results, detected_lang
 
 def snap_to_sentence_boundary(segments: List[Dict[str, Any]], target_start: float, target_end: float) -> Tuple[float, float]:
     """
