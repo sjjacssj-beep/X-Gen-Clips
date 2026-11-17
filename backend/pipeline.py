@@ -160,25 +160,44 @@ def transcribe_audio(wav_path: Path, model_name: str, out_dir: Path, vid_id: str
     segments_gen, _ = whisper_model.transcribe(
         str(wav_path),
         word_timestamps=True,
-        beam_size=1,
+        beam_size=2,
+        vad_filter=True,
+        vad_parameters=dict(min_silence_duration_ms=400),
         condition_on_previous_text=False
     )
 
     results = []
     for s in segments_gen:
+        # Ignore non-speech / hallucinated noise segments
+        if getattr(s, "no_speech_prob", 0) > 0.45:
+            continue
+        if getattr(s, "avg_logprob", 0) < -0.95:
+            continue
+        if getattr(s, "compression_ratio", 1.0) > 2.4:
+            continue
+
+        raw_text = s.text.strip()
+        # Drop meaningless single-syllable or repetitive hallucinations
+        if len(raw_text) < 2 or len(set(raw_text)) <= 2:
+            continue
+
         words = []
         if hasattr(s, "words") and s.words:
             for w in s.words:
+                w_str = w.word.strip()
+                if not w_str or getattr(w, "probability", 1.0) < 0.25:
+                    continue
                 words.append({
-                    "word": w.word.strip(),
+                    "word": w_str,
                     "start": round(w.start, 2),
                     "end": round(w.end, 2),
                     "probability": round(getattr(w, "probability", 1.0), 2)
                 })
+
         results.append({
             "start": round(s.start, 2),
             "end": round(s.end, 2),
-            "text": s.text.strip(),
+            "text": raw_text,
             "words": words
         })
 

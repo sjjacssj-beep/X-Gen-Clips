@@ -19,6 +19,13 @@
     </a>
 
     <div class="header-actions">
+      <!-- Active Channel Profile Switcher -->
+      <div id="channelProfilePill" class="clay-pill" onclick="App.openProfileModal()" style="display: flex; align-items: center; gap: 8px; cursor: pointer; border-color: rgba(56, 189, 248, 0.4); padding: 6px 14px; font-weight: 700; font-size: 13px;">
+        <span id="channelColorDot" style="width: 10px; height: 10px; border-radius: 50%; background: #D97706; box-shadow: 0 0 8px #D97706;"></span>
+        <span id="channelNameText">Primary Channel</span>
+        <span style="font-size: 10px; opacity: 0.7;">▾</span>
+      </div>
+
       <div id="headerActiveWorkBanner" class="header-work-banner" style="display: none;">
         <span class="live-pulse-dot"></span>
         <span id="headerWorkText" class="header-work-text">Kaam chal raha hai...</span>
@@ -61,6 +68,9 @@
           <button id="heroCancelBtn" class="clay-btn btn-danger-cancel submit-btn" onclick="App.cancelJob()" style="display: none;">
             🛑 Kaam Roko (End)
           </button>
+          <button id="heroResetBtn" class="clay-btn submit-btn" onclick="App.resetQueue()" style="display: none; background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.5); color: #FCA5A5;">
+            🔄 Force Reset
+          </button>
         </div>
 
         <!-- Instant Link Preview Card -->
@@ -75,6 +85,9 @@
         <!-- Presets Bar -->
         <div class="presets-bar">
           <div class="preset-list">
+            <div class="clay-pill preset-pill active" data-preset="tagdi" onclick="App.selectPreset('tagdi')" style="border-color: #F59E0B; background: rgba(245, 158, 11, 0.15);">
+              ⚡ Tagdi Edit (Action / Game)
+            </div>
             <div class="clay-pill preset-pill" data-preset="podcast" onclick="App.selectPreset('podcast')">
               🎙️ Podcast (45-55s)
             </div>
@@ -95,9 +108,11 @@
         <div id="optionsDrawer" class="options-drawer">
           <div class="options-grid">
             <div class="option-group">
-              <label class="option-label">Video Style</label>
+              <label class="option-label">Video Style & Mode</label>
               <select id="optStyle" class="option-select">
-                <option value="cinematic_blur" selected>Cinematic Blur (16:9 Fit + Blurred BG • Gaming & Podcasts)</option>
+                <option value="game" selected>🎮 Gaming Action Crop (Center HUD + Dynamic Punch)</option>
+                <option value="podcast">🎙️ Podcast Speaker Follow (Face Track + Zoom)</option>
+                <option value="cinematic_blur">Cinematic Blur (16:9 Fit + Blurred BG)</option>
                 <option value="vibrant">Vibrant Gaming Boost (Sharp Video + Vivid BG)</option>
                 <option value="film_mood">Film Mood (Cinematic Grade + Soft Backdrop)</option>
                 <option value="crisp_crop">Full Vertical Fill (9:16 Center Crop)</option>
@@ -105,9 +120,18 @@
             </div>
 
             <div class="option-group">
+              <label class="option-label">⚡ Tagdi Intensity</label>
+              <select id="optTagdiIntensity" class="option-select">
+                <option value="low">Low Intensity (Subtle Zooms & Clean SFX)</option>
+                <option value="medium" selected>Medium Intensity (Punchy Hype • Recommended)</option>
+                <option value="high">High Intensity (Full Action, Glitch & Bass Drops)</option>
+              </select>
+            </div>
+
+            <div class="option-group">
               <label class="option-label">🔥 Trending Caption Style</label>
               <select id="optColor" class="option-select">
-                <option value="hormozi">🌟 Hormozi Gold Pop (Trending #1)</option>
+                <option value="hormozi" selected>🌟 Hormozi Gold Pop (Trending #1)</option>
                 <option value="mrbeast">🔥 MrBeast Impact Yellow</option>
                 <option value="neon_cyan">⚡ Cyberpunk Neon Cyan</option>
                 <option value="hot_pink">🌸 TikTok Viral Pink</option>
@@ -117,21 +141,25 @@
             </div>
 
             <div class="option-group">
-              <label class="option-label">🛡️ Safe Zone & Position</label>
-              <select id="optPos" class="option-select">
-                <option value="bottom">🎯 Sweet Spot (Lower-Middle - Recommended)</option>
-                <option value="middle">📍 Exact Screen Center</option>
-                <option value="top">📷 Safe Upper (Below Camera Notch)</option>
+              <label class="option-label">Clips Ki Ginti</label>
+              <select id="optClipsCount" class="option-select">
+                <option value="auto" selected>Auto (~1-2 clips per 10 min)</option>
+                <option value="5">5 Clips</option>
+                <option value="10">10 Clips</option>
+                <option value="20">20 Clips (Target for 2-4h Stream)</option>
+                <option value="30">30 Clips</option>
+                <option value="50">50 Clips</option>
               </select>
             </div>
 
             <div class="option-group">
-              <label class="option-label">Clips Count</label>
-              <select id="optClipsCount" class="option-select">
-                <option value="1">1 Best Clip</option>
-                <option value="2">2 Clips</option>
-                <option value="3">3 Clips</option>
-              </select>
+              <label class="option-label">⏱️ Duration Bracket</label>
+              <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-primary); cursor: pointer;">
+                  <input type="checkbox" id="optLongShortMode">
+                  Long Short Mode (60 - 175s Official Shorts)
+                </label>
+              </div>
             </div>
 
             <div class="option-group">
@@ -309,6 +337,72 @@
                 <span>Render khatam hone par output folder kholo</span>
               </label>
             </div>
+          </div>
+        </div>
+
+        <!-- LLM Provider Chain (Ollama Local Priority + Cloud Fallback) -->
+        <div class="clay-inset-box" style="padding: 24px; display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 24px;">🤖</span>
+              <h3 style="font-size: 18px; color: var(--accent-sky); margin: 0;">LLM Provider Chain (Zero-Cost Local First)</h3>
+            </div>
+            <button class="clay-btn" onclick="App.testAllLLMProviders()" style="font-size: 13px; padding: 6px 14px;">
+              ⚡ Test Providers
+            </button>
+          </div>
+
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 12px 16px; font-size: 13px; color: #34D399;">
+            🔒 <strong>Local Ollama Active:</strong> Local Qwen 2.5:3b PC par chalta hai — Zero API cost, unlimited quota, aur 100% private.
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">⚠️ Note: External free cloud tiers (OpenRouter) aapke prompts par model training kar sakte hain.</div>
+          </div>
+
+          <div id="llmProvidersList" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Dynamic LLM provider rows -->
+          </div>
+        </div>
+
+        <!-- Multi-Channel Profiles Manager -->
+        <div class="clay-inset-box" style="padding: 24px; display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 24px;">👥</span>
+              <h3 style="font-size: 18px; color: var(--accent-sky); margin: 0;">Multi-Channel Profiles (Strict Data Isolation)</h3>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="clay-btn" onclick="App.openCreateProfileModal()" style="font-size: 13px; padding: 6px 14px; background: #2563eb; color: #fff;">
+                + Naya Channel Jodo
+              </button>
+              <button class="clay-btn" onclick="App.exportActiveProfile()" style="font-size: 13px; padding: 6px 14px;">
+                💾 Export Backup
+              </button>
+            </div>
+          </div>
+
+          <div id="profilesListGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;">
+            <!-- Profile cards dynamically populate -->
+          </div>
+        </div>
+
+        <!-- Shorts Bundle Importer -->
+        <div class="clay-inset-box" style="padding: 24px; display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 24px;">📦</span>
+              <h3 style="font-size: 18px; color: var(--accent-sky); margin: 0;">Shorts Bundle Importer (Batch Queue)</h3>
+            </div>
+          </div>
+          <p style="font-size: 14px; color: var(--text-secondary); margin: 0;">
+            ZIP file ya folder se bulk videos import karein. Auto 9:16 fix, captions, unique titles, aur duplicate protection apply hoga.
+          </p>
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <input type="text" id="bundlePathInput" class="clay-input" placeholder="Folder path ya .zip file path (e.g. C:\videos\batch1.zip)" style="flex: 1; min-width: 260px;">
+            <button class="clay-btn" onclick="App.startBundleImport()" style="background: linear-gradient(135deg, #F59E0B, #D97706); color: #fff; font-weight: 700; padding: 10px 20px;">
+              ⚡ Import & Queue
+            </button>
+          </div>
+          <div style="font-size: 12px; color: #94A3B8;">
+            🛡️ <em>Strict Policy:</em> Watermark hatane ka koi tool nahi hai. Sirf apna ya authorized content hi import karein.
           </div>
         </div>
 

@@ -14,6 +14,8 @@ const App = {
     this.initSSE();
     this.checkActiveStatus();
     this.checkYouTubeStatus();
+    this.loadProfiles();
+    this.loadLLMProviders();
     this.loadClips();
     this.checkHealthBadge();
     this.bindEvents();
@@ -106,6 +108,7 @@ const App = {
     const banner = document.getElementById('headerActiveWorkBanner');
     const headerText = document.getElementById('headerWorkText');
     const heroCancel = document.getElementById('heroCancelBtn');
+    const heroReset = document.getElementById('heroResetBtn');
     const submitBtn = document.getElementById('mainSubmitBtn');
 
     if (banner) {
@@ -117,6 +120,9 @@ const App = {
 
     if (heroCancel) {
       heroCancel.style.display = isWorking ? 'inline-block' : 'none';
+    }
+    if (heroReset) {
+      heroReset.style.display = isWorking ? 'inline-block' : 'none';
     }
 
     if (submitBtn) {
@@ -172,6 +178,10 @@ const App = {
     } else if (tabName === 'settings') {
       this.populateSettingsFields();
       this.refreshHealth();
+      this.checkYouTubeStatus();
+      this.loadProfiles();
+      this.loadLLMProviders();
+    }
     }
   },
 
@@ -427,6 +437,233 @@ const App = {
       await this.checkYouTubeStatus();
     } catch (e) {
       alert("Disconnect fail hua: " + e.message);
+    }
+  },
+
+  /* ======================================================== */
+  /* MULTI-CHANNEL PROFILES (v2)                              */
+  /* ======================================================== */
+  activeProfile: null,
+  profiles: [],
+
+  async loadProfiles() {
+    try {
+      const res = await fetch('/api/profiles');
+      const data = await res.json();
+      this.profiles = data.profiles || [];
+      this.activeProfile = data.active_profile || null;
+
+      // Update header profile pill
+      const nameEl = document.getElementById('channelNameText');
+      const dotEl = document.getElementById('channelColorDot');
+      if (this.activeProfile) {
+        if (nameEl) nameEl.innerText = this.activeProfile.name || 'Default Channel';
+        if (dotEl) dotEl.style.backgroundColor = this.activeProfile.color || '#38BDF8';
+      }
+
+      // Render profile grid in Settings
+      const grid = document.getElementById('profilesListGrid');
+      if (grid) {
+        grid.innerHTML = this.profiles.map(p => {
+          const isActive = this.activeProfile && this.activeProfile.id === p.id;
+          return `
+            <div class="clay-card" style="padding: 16px; border: 1.5px solid ${isActive ? p.color : 'rgba(255,255,255,0.08)'}; background: ${isActive ? 'rgba(56,189,248,0.05)' : 'var(--bg-card)'}; border-radius: 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${p.color};"></span>
+                  <strong style="color:var(--text-primary); font-size:15px;">${p.name}</strong>
+                </div>
+                ${isActive ? '<span style="font-size:11px; padding:2px 8px; border-radius:10px; background:#10B981; color:#fff; font-weight:700;">ACTIVE</span>' : ''}
+              </div>
+              <p style="font-size:12px; color:var(--text-muted); margin-bottom: 12px;">
+                Channel: ${p.channel_title || 'YouTube Linked'}<br>
+                Clips: ${p.total_clips || 0} • Pin: ${p.has_pin ? '🔒 Set' : '🔓 None'}
+              </p>
+              <div style="display: flex; gap: 8px;">
+                ${!isActive ? `
+                  <button class="clay-btn" onclick="App.switchProfile('${p.id}', ${p.has_pin})" style="flex:1; padding:6px 10px; font-size:12px; background:rgba(56,189,248,0.15); color:var(--accent-sky);">
+                    Switch
+                  </button>
+                ` : `
+                  <button class="clay-btn" onclick="App.exportActiveProfile()" style="flex:1; padding:6px 10px; font-size:12px; background:rgba(245,158,11,0.15); color:var(--accent-orange);">
+                    📦 Backup Export
+                  </button>
+                `}
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    } catch (e) {
+      console.warn("Could not load profiles:", e);
+    }
+  },
+
+  async switchProfile(profileId, hasPin) {
+    let pin = null;
+    if (hasPin) {
+      pin = prompt("Is profile ka 4-digit PIN enter karein:");
+      if (!pin) return;
+    }
+    try {
+      const res = await fetch('/api/profiles/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_id: profileId, pin: pin })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.detail || "Profile switch error.");
+        return;
+      }
+      alert(`✓ Switched to profile: ${data.active_profile.name}`);
+      await this.loadProfiles();
+      await this.checkYouTubeStatus();
+    } catch (e) {
+      alert("Switch error: " + e.message);
+    }
+  },
+
+  async createProfilePrompt() {
+    const name = prompt("Naye Channel Profile ka naam likhein (e.g. FreeFire Shorts):");
+    if (!name) return;
+    const pin = prompt("Optional 4-digit PIN daalo (skip karne ke liye OK dabayein):");
+    try {
+      const res = await fetch('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, color: '#F59E0B', pin: pin || null })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.detail || "Profile create error.");
+        return;
+      }
+      alert(`✓ Naya profile ban gaya: ${name}`);
+      await this.loadProfiles();
+    } catch (e) {
+      alert("Create error: " + e.message);
+    }
+  },
+
+  exportActiveProfile() {
+    window.open('/api/profiles/export', '_blank');
+  },
+
+  /* ======================================================== */
+  /* LLM PROVIDER CHAIN (v2)                                  */
+  /* ======================================================== */
+  llmConfig: null,
+
+  async loadLLMProviders() {
+    const container = document.getElementById('llmProvidersList');
+    if (!container) return;
+    try {
+      const res = await fetch('/api/llm/providers');
+      this.llmConfig = await res.json();
+      const provs = this.llmConfig.providers || {};
+      const priority = this.llmConfig.priority || [];
+
+      container.innerHTML = priority.map(pId => {
+        const p = provs[pId];
+        if (!p) return '';
+        const isReady = p.status === 'ready';
+        const isLocal = p.is_local;
+        return `
+          <div class="clay-inset-box" style="padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; border-left: 4px solid ${isReady ? '#10B981' : '#F59E0B'};">
+            <div style="flex: 1; min-width: 220px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <strong style="color:var(--text-primary); font-size:15px;">${p.name}</strong>
+                <span class="health-badge ${isReady ? 'badge-good' : 'badge-warning'}" style="font-size:10px; padding:2px 8px;">
+                  ${isReady ? 'READY' : (p.status || 'CONFIG')}
+                </span>
+                ${isLocal ? '<span style="font-size:10px; background:#38BDF8; color:#000; padding:2px 6px; border-radius:4px; font-weight:700;">LOCAL (Zero Cost)</span>' : ''}
+              </div>
+              <p style="font-size:12px; color:var(--text-muted); margin-top: 4px;">
+                Model: <code>${p.model}</code> • ${p.description || ''}
+              </p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              ${!isLocal ? `
+                <input type="password" id="key_${pId}" class="clay-input" placeholder="API Key" value="${p.api_key || ''}" style="width: 140px; padding: 6px 10px; font-size: 12px;" onchange="App.saveLLMKey('${pId}', this.value)">
+              ` : `
+                <span style="font-size:12px; color:#10B981; font-weight:600;">✓ Installed on PC</span>
+              `}
+              <button class="clay-btn" onclick="App.testLLMProvider('${pId}')" style="padding: 6px 14px; font-size: 12px; background: rgba(56,189,248,0.15); color: var(--accent-sky);">
+                ⚡ Test
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.warn("Could not load LLM providers:", e);
+    }
+  },
+
+  async testLLMProvider(providerId) {
+    try {
+      const res = await fetch('/api/llm/test-provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider_id: providerId })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        alert(`✓ Provider [${providerId}] TEST PASSED!\nLatency: ${data.latency_ms}ms\nResponse: "${data.test_response}"`);
+      } else {
+        alert(`❌ Provider [${providerId}] TEST FAILED:\n${data.error || data.detail}`);
+      }
+      await this.loadLLMProviders();
+    } catch (e) {
+      alert("Test error: " + e.message);
+    }
+  },
+
+  async saveLLMKey(providerId, apiKey) {
+    if (!this.llmConfig || !this.llmConfig.providers[providerId]) return;
+    this.llmConfig.providers[providerId].api_key = apiKey;
+    this.llmConfig.providers[providerId].enabled = !!apiKey;
+    try {
+      await fetch('/api/llm/save-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          priority: this.llmConfig.priority,
+          providers: this.llmConfig.providers
+        })
+      });
+      await this.loadLLMProviders();
+    } catch (e) {
+      console.error(e);
+    }
+  },
+
+  /* ======================================================== */
+  /* SHORTS BUNDLE IMPORTER (v2)                              */
+  /* ======================================================== */
+  async startBundleImport() {
+    const input = document.getElementById('bundlePathInput');
+    const pathVal = input ? input.value.trim() : '';
+    if (!pathVal) {
+      alert("Kripya valid folder path ya .zip file path enter karein!");
+      return;
+    }
+    try {
+      const res = await fetch('/api/bundle/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_path: pathVal, daily_cap: 4 })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.detail || "Bundle import error.");
+        return;
+      }
+      alert(`✓ Bundle Import Shuru!\nImported items: ${data.imported_count || 1}\nQueue me add kar diya gaya hai.`);
+      if (input) input.value = '';
+    } catch (e) {
+      alert("Bundle import error: " + e.message);
     }
   },
 
@@ -713,6 +950,20 @@ const App = {
     }
   },
 
+  async resetQueue() {
+    try {
+      await fetch('/api/reset', { method: 'POST' });
+      this.setWorkingState(false);
+      const card = document.getElementById('progressCard');
+      if (card) card.style.display = 'none';
+      const bar = document.getElementById('progressBarFill');
+      if (bar) bar.style.width = '0%';
+      alert("✓ Queue aur background process successfully reset ho gaya hai! Ab aap fresh video process kar sakte hain.");
+    } catch (e) {
+      console.error("Reset error:", e);
+    }
+  },
+
   onJobCancelled(msg) {
     this.setWorkingState(false);
     const card = document.getElementById('progressCard');
@@ -844,11 +1095,14 @@ const App = {
       return;
     }
 
+    const countVal = document.getElementById('optClipsCount')?.value || "auto";
     const payload = {
       url: url,
       preset: this.currentPreset,
-      clips_count: parseInt(document.getElementById('optClipsCount')?.value || "1"),
-      style: document.getElementById('optStyle')?.value || "cinematic_blur",
+      clips_count: countVal === "auto" ? "auto" : parseInt(countVal),
+      style: document.getElementById('optStyle')?.value || "game",
+      tagdi_intensity: document.getElementById('optTagdiIntensity')?.value || "medium",
+      long_short_mode: document.getElementById('optLongShortMode')?.checked || false,
       caption_color: document.getElementById('optColor')?.value || "hormozi",
       caption_position: document.getElementById('optPos')?.value || "bottom",
       caption_size: parseInt(document.getElementById('optSize')?.value || "58"),
@@ -986,9 +1240,19 @@ const App = {
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
             <div>
               <h2 class="clip-main-title hook-active-display">${clip.hook_line || clip.title}</h2>
-              <p style="font-size: 14px; color: var(--text-secondary); margin-top: 4px;">
-                ⏱ ${clip.duration} • 💾 ${clip.filesize} • 🔥 Viral Score: <strong style="color:var(--accent-orange);">${clip.viral_score}/100</strong>
-              </p>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap;">
+                <span style="font-size:11px; font-weight:800; padding:2px 8px; border-radius:6px; background:${clip.viral_tier === 'Tier A' ? '#10B981' : (clip.viral_tier === 'Tier B' ? '#38BDF8' : '#F59E0B')}; color:#000;">
+                  ${clip.viral_tier || 'Tier A (High Retention)'}
+                </span>
+                <span style="font-size: 13px; color: var(--text-secondary);">
+                  ⏱ ${clip.duration} • 💾 ${clip.filesize} • 🔥 Score: <strong style="color:var(--accent-orange);">${clip.viral_score}/100</strong>
+                </span>
+              </div>
+              ${clip.improvement_tip ? `
+                <p style="font-size:12px; color:#FCD34D; background:rgba(245,158,11,0.1); padding:6px 10px; border-radius:6px; margin-top:6px; border:1px solid rgba(245,158,11,0.25);">
+                  💡 <strong>Virality Tip:</strong> ${clip.improvement_tip}
+                </p>
+              ` : ''}
             </div>
             <button class="clay-btn btn-resuggest" onclick="SocialManager.resuggestText(${clip.id}, '${clip.filename}')">
               🔄 Dobara suggest karo

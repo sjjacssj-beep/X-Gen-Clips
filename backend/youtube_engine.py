@@ -276,6 +276,7 @@ _auth_thread = None
 _auth_in_progress = False
 _current_auth_url = None
 _local_server_instance = None
+_auth_start_time = 0
 
 def is_client_secret_present() -> bool:
     """Checks if client_secret.json is installed in secrets/."""
@@ -317,7 +318,7 @@ def get_credentials() -> Tuple[Optional[Credentials], str]:
 
 def check_youtube_status() -> Dict[str, Any]:
     """Returns clean status dictionary for frontend settings badge."""
-    global _auth_in_progress, _current_auth_url
+    global _auth_in_progress, _current_auth_url, _auth_start_time
     if not is_client_secret_present():
         return {
             "configured": False,
@@ -327,6 +328,23 @@ def check_youtube_status() -> Dict[str, Any]:
             "message": "client_secret.json nahi mila. Project ke secrets/ folder mein rakhein."
         }
 
+    # Always check credentials first — if valid token exists, mark connected immediately!
+    creds, reason = get_credentials()
+    if creds and creds.valid:
+        _auth_in_progress = False
+        return {
+            "configured": True,
+            "connected": True,
+            "in_progress": False,
+            "status": "connected",
+            "message": "✓ YouTube account juda hua hai (Ready to upload)."
+        }
+
+    # Reset stale authentication after 3 minutes
+    if _auth_in_progress and (time.time() - _auth_start_time > 180):
+        _auth_in_progress = False
+        _current_auth_url = None
+
     if _auth_in_progress:
         return {
             "configured": True,
@@ -335,16 +353,6 @@ def check_youtube_status() -> Dict[str, Any]:
             "auth_url": _current_auth_url,
             "status": "authenticating",
             "message": "Browser mein Google login chal raha hai. Kripya niche diye link par click karein."
-        }
-
-    creds, reason = get_credentials()
-    if creds and creds.valid:
-        return {
-            "configured": True,
-            "connected": True,
-            "in_progress": False,
-            "status": "connected",
-            "message": "✓ YouTube account juda hua hai (Ready to upload)."
         }
     elif reason == "login_expired":
         return {
@@ -381,7 +389,7 @@ def start_interactive_auth() -> Dict[str, Any]:
     Spawns background OAuth Desktop flow with local server callback.
     Generates auth_url immediately and returns it so frontend can window.open it.
     """
-    global _auth_thread, _auth_in_progress, _current_auth_url, _local_server_instance
+    global _auth_thread, _auth_in_progress, _current_auth_url, _local_server_instance, _auth_start_time
 
     if not is_client_secret_present():
         raise FileNotFoundError("secrets/client_secret.json file nahi mili! Pehle file rakhein.")
@@ -410,6 +418,7 @@ def start_interactive_auth() -> Dict[str, Any]:
 
     _current_auth_url = auth_url
     _auth_in_progress = True
+    _auth_start_time = time.time()
     _local_server_instance = server
 
     # Try launching desktop browser in foreground via Windows shell

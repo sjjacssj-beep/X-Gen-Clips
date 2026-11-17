@@ -39,6 +39,13 @@ from . import gemini_engine
 from . import subtitle_engine
 from . import system_diag
 from . import youtube_engine
+from .llm_engine import llm_chain
+from .profile_manager import profile_manager
+from .shorts_validator import validate_shorts_compliance, auto_fix_shorts_compliance
+from .tagdi_editor import render_tagdi_clip
+from .bundle_importer import import_and_process_bundle_item, unpack_bundle_zip
+from .virality_engine import virality_engine
+from . import long_video_pipeline
 from .queue_manager import job_manager, load_settings, save_settings, load_history, save_to_history, clear_workspace
 
 def log_event(msg: str):
@@ -96,19 +103,42 @@ state = {
 
 class ProcessRequest(BaseModel):
     url: str
-    preset: str = "custom"         # podcast | motivation | comedy | custom
-    clips_count: int = 1
-    style: str = "cinematic_blur"  # cinematic_blur | vibrant | film_mood | crisp_crop
+    preset: str = "custom"         # podcast | motivation | comedy | custom | tagdi
+    clips_count: Any = "auto"      # "auto" | 5 | 10 | 20 | 30 | 50 | int
+    style: str = "cinematic_blur"  # cinematic_blur | vibrant | film_mood | crisp_crop | game | podcast
+    tagdi_intensity: str = "medium"# low | medium | high
     caption_color: str = "hormozi" # hormozi | neon_cyan | hot_pink | clean_white | electric_mint
     caption_position: str = "bottom"
     caption_size: int = 58
     whisper_model: str = "base"
     min_length: int = 20
     max_length: int = 60
+    long_short_mode: bool = False  # Allows 60-175s
     enable_sfx: bool = True
     watermark_text: str = ""
     language: str = "hinglish"
     force: bool = False
+
+class CreateProfileRequest(BaseModel):
+    name: str
+    color: str = "#38BDF8"
+    pin: Optional[str] = None
+
+class SwitchProfileRequest(BaseModel):
+    profile_id: str
+    pin: Optional[str] = None
+
+class TestProviderRequest(BaseModel):
+    provider_id: str
+
+class SaveLLMConfigRequest(BaseModel):
+    priority: List[str]
+    providers: Dict[str, Any]
+
+class BundleImportRequest(BaseModel):
+    file_path: Optional[str] = None
+    urls: Optional[List[str]] = None
+    daily_cap: int = 4
 
 class ResuggestRequest(BaseModel):
     clip_id: Optional[int] = None
@@ -170,24 +200,68 @@ def worker_process_job(req: ProcessRequest):
         })
 
     try:
+        # Step 0: Pre-flight Disk Space Check
+        ok, free_gb, disk_msg = long_video_pipeline.check_disk_space(min_gb_required=5.0)
+        if not ok:
+            raise OSError(disk_msg)
+
+        # Parse target clips count
+        if str(req.clips_count).lower() == "auto":
+            target_clips = 10
+        else:
+            try:
+                target_clips = int(req.clips_count)
+            except Exception:
+                target_clips = 10
+
+        if req.long_short_mode:
+            req.min_length = max(60, req.min_length)
+            req.max_length = min(175, max(120, req.max_length))
+
         # Step 1: Fast Audio-Only Download & 16kHz conversion
-        update_prog(12, "Downloading audio (16kHz mono)...")
+        update_prog(12, f"Downloading audio (16kHz mono, {free_gb}GB free)...")
         wav_path, vid_id = pipeline.download_audio_16k(req.url, OUTPUTS_DIR)
 
         # Step 2: Transcribe only audio stream
         update_prog(30, f"Transcribing audio with Whisper ({req.whisper_model})...")
         transcript = pipeline.transcribe_audio(wav_path, req.whisper_model, OUTPUTS_DIR, vid_id)
 
-        # Step 3: Single Gemini call for viral clips and complete social kit
-        update_prog(50, f"Selecting top viral clips with Gemini ({gemini_model})...")
-        clip_candidates = gemini_engine.pick_clips_and_metadata(
-            transcript_segments=transcript,
-            num_clips=req.clips_count,
-            min_len=req.min_length,
-            max_len=req.max_length,
-            model_name=gemini_model,
-            language=req.language
-        )
+        # Step 3: Viral candidate selection using LLM Provider Chain / Gemini / Heuristics
+        update_prog(50, f"Selecting top viral clips (Target: {target_clips}) with AI Chain...")
+        has_speech = any(s.get("words") for s in transcript)
+        if not has_speech or len(transcript) == 0:
+            log_event("Speech not detected or clean audio: scanning audio energy peaks for action...")
+            energy_prof = long_video_pipeline.compute_audio_energy_profile(wav_path)
+            raw_candidates = long_video_pipeline.detect_candidate_windows_heuristic(
+                words=[],
+                energy_profile=energy_prof,
+                target_count=target_clips,
+                min_length_sec=req.min_length,
+                max_length_sec=req.max_length
+            )
+            if not raw_candidates:
+                # Fallback: slice 30s moment from start
+                raw_candidates = [{
+                    "id": 1,
+                    "start": 0.0,
+                    "end": min(45.0, float(req.max_length)),
+                    "duration": min(45.0, float(req.max_length)),
+                    "heuristic_score": 88,
+                    "text": "Gaming Action Clutch Moment"
+                }]
+            clip_candidates = llm_chain.analyze_viral_candidates(
+                candidates=raw_candidates[:target_clips],
+                video_context={"title": f"Viral Reel {vid_id}", "category": "Gaming/Shorts"}
+            )
+        else:
+            clip_candidates = gemini_engine.pick_clips_and_metadata(
+                transcript_segments=transcript,
+                num_clips=target_clips,
+                min_len=req.min_length,
+                max_len=req.max_length,
+                model_name=gemini_model,
+                language=req.language
+            )
 
         update_prog(65, f"Rendering {len(clip_candidates)} clips with Tagdi Edit Engine...")
 
@@ -218,7 +292,6 @@ def worker_process_job(req: ProcessRequest):
                             w_start = w.get("start") if "start" in w else w.get("s", s["start"])
                             w_end = w.get("end") if "end" in w else w.get("e", s["end"])
                             if w_end >= clean_start and w_start <= clean_end:
-                                # Re-offset word timestamps to clip start
                                 clip_words.append({
                                     "word": w_word,
                                     "start": max(0.0, round(w_start - clean_start, 2)),
@@ -243,18 +316,45 @@ def worker_process_job(req: ProcessRequest):
 
                 hook_line = candidate.get("hook_line", "WATCH TILL END! 🔥")
 
-                # Single-pass FFmpeg rendering
-                pipeline.render_clip_single_pass(
-                    source_path=source_file,
-                    out_clip_path=out_clip,
-                    start_sec=clean_start,
-                    end_sec=clean_end,
-                    ass_path=ass_path,
+                # Choose renderer: Tagdi Edit Engine or Single-Pass Pipeline
+                if req.preset == "tagdi" or req.style in ("game", "podcast"):
+                    tagdi_editor.render_tagdi_clip(
+                        source_path=source_file,
+                        out_clip_path=out_clip,
+                        start_sec=clean_start,
+                        end_sec=clean_end,
+                        ass_path=ass_path,
+                        hook_text=hook_line,
+                        mode="game" if req.style == "game" else "podcast",
+                        intensity=req.tagdi_intensity,
+                        watermark_text=req.watermark_text or settings.get("brand_watermark", ""),
+                        is_preview=False
+                    )
+                else:
+                    pipeline.render_clip_single_pass(
+                        source_path=source_file,
+                        out_clip_path=out_clip,
+                        start_sec=clean_start,
+                        end_sec=clean_end,
+                        ass_path=ass_path,
+                        hook_text=hook_line,
+                        mode=req.style,
+                        is_preview=False,
+                        enable_sfx=req.enable_sfx,
+                        watermark_text=req.watermark_text or settings.get("brand_watermark", "")
+                    )
+
+                # Pre-export YouTube Shorts compliance validation (<175s, 1080x1920)
+                is_valid, s_meta, s_msg = validate_shorts_compliance(out_clip)
+                if not is_valid:
+                    auto_fix_shorts_compliance(out_clip, out_clip)
+
+                # Proprietary Virality Engine Scoring
+                spoken_script = " ".join(w["word"] for w in clip_words)
+                v_res = virality_engine.compute_virality_score(
                     hook_text=hook_line,
-                    mode=req.style,
-                    is_preview=False,
-                    enable_sfx=req.enable_sfx,
-                    watermark_text=req.watermark_text or settings.get("brand_watermark", "")
+                    spoken_text=spoken_script,
+                    duration_sec=dur
                 )
 
                 # Extract 3 cover frames
@@ -262,7 +362,6 @@ def worker_process_job(req: ProcessRequest):
 
                 # Audit reel quality
                 quality = pipeline.audit_reel_quality(out_clip, dur)
-
                 size_mb = f"{out_clip.stat().st_size / (1024 * 1024):.1f} MB" if out_clip.exists() else "0 MB"
 
                 clip_record = {
@@ -273,8 +372,11 @@ def worker_process_job(req: ProcessRequest):
                     "title_options": candidate.get("title_options", [candidate.get("title")]),
                     "hook_line": hook_line,
                     "hook_options": candidate.get("hook_options", [hook_line]),
-                    "viral_score": candidate.get("viral_score", 92),
-                    "viral_reason": candidate.get("viral_reason", "High emotional hook"),
+                    "viral_score": v_res["score"],
+                    "viral_tier": v_res["tier"],
+                    "viral_reason": v_res["reason"],
+                    "improvement_tip": v_res["improvement_tip"],
+                    "virality_breakdown": v_res["breakdown"],
                     "duration": f"{int(dur)}s",
                     "duration_sec": dur,
                     "filesize": size_mb,
@@ -404,6 +506,20 @@ def cancel_job():
     job_manager.broadcast("cancelled", {"message": "Process user dwara cancel kar diya gaya."})
     log_event("API: /api/cancel executed successfully.")
     return {"status": "cancelled", "was_running": was_running, "message": "Kaam successfully rok diya gaya hai."}
+
+@app.post("/api/reset")
+def reset_system():
+    """Forcefully clears queue, cancels jobs, and resets state back to idle."""
+    global state
+    job_manager.cancel_active_job()
+    state["status"] = "idle"
+    state["progress"] = 0
+    state["step"] = ""
+    state["error"] = None
+    state["current_url"] = ""
+    job_manager.broadcast("cancelled", {"message": "System queue reset ho gayi hai."})
+    log_event("API: /api/reset executed.")
+    return {"status": "idle", "message": "Queue aur background state successfully reset kar diya gaya hai."}
 
 @app.get("/api/stream")
 def get_sse_stream():
@@ -762,6 +878,98 @@ def upload_all_to_youtube():
         "results": results,
         "errors": errors
     }
+
+# ========================================================
+# MULTI-CHANNEL PROFILES ENDPOINTS
+# ========================================================
+@app.get("/api/profiles")
+def get_profiles_list():
+    return profile_manager.list_profiles()
+
+@app.post("/api/profiles")
+def create_profile_endpoint(req: CreateProfileRequest):
+    return profile_manager.create_profile(name=req.name, color=req.color, pin=req.pin)
+
+@app.post("/api/profiles/switch")
+def switch_profile_endpoint(req: SwitchProfileRequest):
+    p = profile_manager.get_profile(req.profile_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Profile nahi mili.")
+    if p.get("pin_hash") and not profile_manager.verify_pin(req.profile_id, req.pin or ""):
+        raise HTTPException(status_code=401, detail="Galat 4-digit PIN. Dobara koshish karein.")
+    return {"status": "success", "profile": p}
+
+@app.get("/api/profiles/export")
+def export_profile_endpoint(profile_id: str = "default"):
+    zip_path = profile_manager.export_profile(profile_id)
+    return FileResponse(zip_path, media_type="application/zip", filename=zip_path.name)
+
+# ========================================================
+# LLM PROVIDER CHAIN ENDPOINTS
+# ========================================================
+@app.get("/api/llm/providers")
+def get_llm_providers():
+    return {
+        "priority": llm_chain.priority,
+        "providers": llm_chain.providers
+    }
+
+@app.post("/api/llm/test-provider")
+def test_llm_provider(req: TestProviderRequest):
+    return llm_chain.test_provider(req.provider_id)
+
+@app.post("/api/llm/save-config")
+def save_llm_config(req: SaveLLMConfigRequest):
+    llm_chain.priority = req.priority
+    for k, pdata in req.providers.items():
+        if k in llm_chain.providers:
+            llm_chain.providers[k].update(pdata)
+    llm_chain.save_config()
+    return {"status": "saved", "message": "LLM Provider Chain settings save ho gayi hain!"}
+
+# ========================================================
+# SHORTS BUNDLE IMPORTER ENDPOINT
+# ========================================================
+@app.post("/api/bundle/import")
+def import_bundle_endpoint(req: BundleImportRequest, request: Request):
+    profile_id = request.headers.get("X-Profile-ID") or "default"
+    if not req.file_path:
+        raise HTTPException(status_code=400, detail="file_path required hai.")
+    target = Path(req.file_path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"File/Folder '{req.file_path}' nahi mila.")
+
+    imported_items = []
+    if target.suffix.lower() == ".zip":
+        extract_dir = DATA_DIR / f"unpacked_{target.stem}"
+        video_files = unpack_bundle_zip(target, extract_dir)
+        for vf in video_files:
+            res = import_and_process_bundle_item(vf, profile_id=profile_id, daily_upload_cap=req.daily_cap)
+            imported_items.append(res)
+    elif target.is_dir():
+        for vf in target.iterdir():
+            if vf.suffix.lower() in (".mp4", ".mov", ".mkv", ".webm"):
+                res = import_and_process_bundle_item(vf, profile_id=profile_id, daily_upload_cap=req.daily_cap)
+                imported_items.append(res)
+    else:
+        res = import_and_process_bundle_item(target, profile_id=profile_id, daily_upload_cap=req.daily_cap)
+        imported_items.append(res)
+
+    return {
+        "status": "completed",
+        "count": len(imported_items),
+        "results": imported_items
+    }
+
+# ========================================================
+# PROPRIETARY VIRALITY SCORE ENDPOINT
+# ========================================================
+@app.post("/api/virality/score")
+def score_virality_endpoint(data: Dict[str, Any]):
+    hook = data.get("hook", "")
+    text = data.get("text", "")
+    dur = float(data.get("duration", 30.0))
+    return virality_engine.compute_virality_score(hook, text, dur)
 
 @app.get("/video/{filename}")
 @app.get("/outputs/{filename}")
