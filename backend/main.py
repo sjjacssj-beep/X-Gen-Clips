@@ -650,6 +650,16 @@ def disconnect_youtube():
 def cancel_youtube_auth():
     return youtube_engine.cancel_auth()
 
+@app.get("/youtube/callback", response_class=HTMLResponse)
+@app.get("/api/youtube/callback", response_class=HTMLResponse)
+def get_youtube_callback_page():
+    """Returns the branded X Gen Clips YouTube callback page."""
+    return HTMLResponse(
+        content=youtube_engine.get_callback_html_page(),
+        status_code=200,
+        headers={"Content-Type": "text/html; charset=utf-8"}
+    )
+
 @app.post("/api/youtube/upload")
 def upload_clip_to_youtube(req: YouTubeUploadRequest):
     video_path = OUTPUTS_DIR / req.filename

@@ -14,10 +14,249 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import (
     InstalledAppFlow,
-    _RedirectWSGIApp,
     _ExclusiveWSGIServer,
     _WSGIRequestHandler
 )
+import wsgiref.util
+
+class _HTMLRedirectWSGIApp:
+    """WSGI app to handle the authorization redirect with Content-Type: text/html; charset=utf-8."""
+    def __init__(self, html_content: str):
+        self.last_request_uri = None
+        self._html_content = html_content
+
+    def __call__(self, environ, start_response):
+        start_response("200 OK", [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Cache-Control", "no-cache, no-store, must-revalidate")
+        ])
+        self.last_request_uri = wsgiref.util.request_uri(environ)
+        return [self._html_content.encode("utf-8")]
+
+def get_callback_html_page() -> str:
+    """Returns the branded X Gen Clips success callback page with countdown and instant sync."""
+    return """<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>X Gen Clips — YouTube Connected!</title>
+    <style>
+        :root {
+            --bg-deep: #070B14;
+            --bg-card: #0F172A;
+            --border-card: rgba(56, 189, 248, 0.22);
+            --orange: #D97706;
+            --orange-bright: #F59E0B;
+            --sky: #38BDF8;
+            --green: #10B981;
+            --text-main: #F8FAFC;
+            --text-muted: #94A3B8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-deep);
+            background-image: 
+                radial-gradient(circle at 50% 20%, rgba(56, 189, 248, 0.12) 0%, transparent 55%),
+                radial-gradient(circle at 80% 80%, rgba(217, 119, 6, 0.08) 0%, transparent 50%);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            max-width: 540px;
+            width: 100%;
+            border-radius: 24px;
+            padding: 44px 36px;
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 40px rgba(56, 189, 248, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 4px;
+            background: linear-gradient(90deg, var(--orange), var(--sky));
+        }
+        .brand {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 22px;
+            display: inline-block;
+        }
+        .brand-x {
+            color: var(--orange);
+            font-weight: 900;
+            font-size: 30px;
+            text-shadow: 0 0 16px rgba(217, 119, 6, 0.5);
+        }
+        .brand-text {
+            color: var(--text-main);
+        }
+        .badge-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            color: #34D399;
+            padding: 6px 18px;
+            border-radius: 9999px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+        .badge-dot {
+            width: 8px;
+            height: 8px;
+            background: #10B981;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #10B981;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text-main);
+            margin-bottom: 12px;
+        }
+        p {
+            color: var(--text-muted);
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        .countdown-box {
+            background: rgba(56, 189, 248, 0.08);
+            border: 1px solid rgba(56, 189, 248, 0.18);
+            border-radius: 12px;
+            padding: 12px 18px;
+            font-size: 14px;
+            color: var(--sky);
+            margin-bottom: 28px;
+            font-weight: 600;
+        }
+        .countdown-num {
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--orange-bright);
+        }
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 12px 22px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--orange), #B45309);
+            color: #FFFFFF;
+            box-shadow: 0 6px 18px rgba(217, 119, 6, 0.35);
+        }
+        .btn-primary:hover {
+            opacity: 0.95;
+            transform: translateY(-1px);
+        }
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-main);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="brand">
+            <span class="brand-x">X</span> <span class="brand-text">Gen Clips</span>
+        </div>
+        <div>
+            <div class="badge-pill">
+                <span class="badge-dot"></span>
+                YouTube Connected
+            </div>
+        </div>
+        <h1>YouTube Safalta Se Jud Gaya!</h1>
+        <p>Aapka Google account X Gen Clips se jud chuka hai. Ab aap apni clips bina kisi jhanjhat direct YouTube par upload kar sakte hain.</p>
+        
+        <div class="countdown-box">
+            ⏱️ <span id="sec" class="countdown-num">3</span> second mein Settings page par le ja rahe hain...
+        </div>
+
+        <div class="btn-group">
+            <button type="button" class="btn btn-secondary" onclick="closeThisTab()">
+                ✖ Is Tab Ko Band Karo
+            </button>
+            <a href="http://localhost:9999/#settings" class="btn btn-primary" onclick="redirectToApp(event)">
+                ⚙️ Settings Mein Jayein
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // Notify opener / other tabs immediately
+        try {
+            if (window.opener && !window.opener.closed) {
+                if (window.opener.App) {
+                    window.opener.App.checkYouTubeStatus();
+                    window.opener.App.switchTab('settings');
+                }
+            }
+        } catch (e) {}
+
+        try {
+            localStorage.setItem('xgenclips_youtube_auth_done', Date.now().toString());
+            const bc = new BroadcastChannel('xgenclips_channel');
+            bc.postMessage({ type: 'youtube_connected' });
+        } catch (e) {}
+
+        function closeThisTab() {
+            window.close();
+            setTimeout(() => {
+                window.location.href = 'http://localhost:9999/#settings';
+            }, 300);
+        }
+
+        function redirectToApp(e) {
+            if (e) e.preventDefault();
+            window.location.href = 'http://localhost:9999/#settings';
+        }
+
+        // 3-second auto-redirect countdown
+        let countdown = 3;
+        const countdownTimer = setInterval(() => {
+            countdown--;
+            const el = document.getElementById('sec');
+            if (el) el.innerText = countdown;
+            if (countdown <= 0) {
+                clearInterval(countdownTimer);
+                window.location.href = 'http://localhost:9999/#settings';
+            }
+        }, 1000);
+    </script>
+</body>
+</html>"""
 import googleapiclient.discovery
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
@@ -154,32 +393,11 @@ def start_interactive_auth() -> Dict[str, Any]:
         except Exception:
             pass
 
-    success_html = """<!DOCTYPE html>
-<html>
-<head>
-    <title>X Gen Clips — YouTube Connected!</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f3f4f6; text-align: center; padding: 60px 20px; }
-        .card { background: #111827; border: 1px solid #374151; max-width: 520px; margin: 0 auto; border-radius: 16px; padding: 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        h1 { color: #10b981; font-size: 26px; margin-bottom: 12px; }
-        p { color: #9ca3af; font-size: 16px; line-height: 1.6; }
-        .badge { display: inline-block; background: #064e3b; color: #6ee7b7; padding: 6px 14px; border-radius: 999px; font-weight: bold; margin-bottom: 18px; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <div class="badge">✓ Connected</div>
-        <h1>YouTube Safalta Se Jud Gaya!</h1>
-        <p>Aapka Google account X Gen Clips se jud chuka hai. Ab aap is tab ko band kar sakte hain aur app mein jakar clips direct YouTube par upload kar sakte hain.</p>
-    </div>
-</body>
-</html>"""
-
     flow = InstalledAppFlow.from_client_secrets_file(
         str(CLIENT_SECRET_FILE),
         scopes=SCOPES
     )
-    wsgi_app = _RedirectWSGIApp(success_html)
+    wsgi_app = _HTMLRedirectWSGIApp(get_callback_html_page())
     server = wsgiref.simple_server.make_server(
         'localhost',
         LOCAL_PORT,

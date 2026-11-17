@@ -17,6 +17,35 @@ const App = {
     this.loadClips();
     this.checkHealthBadge();
     this.bindEvents();
+
+    // Check if redirected to Settings tab
+    if (window.location.hash === '#settings') {
+      this.switchTab('settings');
+      this.checkYouTubeStatus();
+    }
+    window.addEventListener('hashchange', () => {
+      if (window.location.hash === '#settings') {
+        this.switchTab('settings');
+        this.checkYouTubeStatus();
+      }
+    });
+
+    // Cross-tab real-time sync when YouTube auth completes!
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'xgenclips_youtube_auth_done') {
+        this.checkYouTubeStatus();
+        this.switchTab('settings');
+      }
+    });
+    try {
+      const bc = new BroadcastChannel('xgenclips_channel');
+      bc.onmessage = (msg) => {
+        if (msg.data && msg.data.type === 'youtube_connected') {
+          this.checkYouTubeStatus();
+          this.switchTab('settings');
+        }
+      };
+    } catch (e) {}
   },
 
   pollTimer: null,
@@ -280,6 +309,10 @@ const App = {
         if (data.connected) {
           badge.className = 'health-badge badge-good';
           badge.innerText = '🟢 Connected';
+          if (this.ytAuthPollTimer) {
+            clearInterval(this.ytAuthPollTimer);
+            this.ytAuthPollTimer = null;
+          }
         } else if (data.in_progress) {
           badge.className = 'health-badge badge-warning';
           badge.innerText = '⏳ Authenticating...';
