@@ -5,12 +5,19 @@ import shutil
 import sys
 import threading
 import time
+import webbrowser
+import wsgiref.simple_server
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple, Callable
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import (
+    InstalledAppFlow,
+    _RedirectWSGIApp,
+    _ExclusiveWSGIServer,
+    _WSGIRequestHandler
+)
 import googleapiclient.discovery
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
@@ -28,6 +35,8 @@ LOCAL_PORT = 8088
 # Active auth thread tracking
 _auth_thread = None
 _auth_in_progress = False
+_current_auth_url = None
+_local_server_instance = None
 
 def is_client_secret_present() -> bool:
     """Checks if client_secret.json is installed in secrets/."""
@@ -69,7 +78,7 @@ def get_credentials() -> Tuple[Optional[Credentials], str]:
 
 def check_youtube_status() -> Dict[str, Any]:
     """Returns clean status dictionary for frontend settings badge."""
-    global _auth_in_progress
+    global _auth_in_progress, _current_auth_url
     if not is_client_secret_present():
         return {
             "configured": False,
@@ -84,8 +93,9 @@ def check_youtube_status() -> Dict[str, Any]:
             "configured": True,
             "connected": False,
             "in_progress": True,
+            "auth_url": _current_auth_url,
             "status": "authenticating",
-            "message": "Browser mein Google login chal raha hai... Kripya permission allow karein."
+            "message": "Browser mein Google login chal raha hai. Kripya niche diye link par click karein."
         }
 
     creds, reason = get_credentials()
@@ -114,53 +124,121 @@ def check_youtube_status() -> Dict[str, Any]:
             "message": "YouTube connected nahi hai. 'YouTube jodo' button dabayein."
         }
 
+def cancel_auth() -> Dict[str, Any]:
+    """Cancels any in-progress auth server cleanly."""
+    global _auth_in_progress, _current_auth_url, _local_server_instance
+    if _local_server_instance:
+        try:
+            _local_server_instance.server_close()
+        except Exception:
+            pass
+    _auth_in_progress = False
+    _current_auth_url = None
+    _local_server_instance = None
+    return {"status": "cancelled", "message": "Login flow cancel kar diya gaya hai."}
+
 def start_interactive_auth() -> Dict[str, Any]:
     """
     Spawns background OAuth Desktop flow with local server callback.
-    Opens the default browser for Google consent.
+    Generates auth_url immediately and returns it so frontend can window.open it.
     """
-    global _auth_thread, _auth_in_progress
+    global _auth_thread, _auth_in_progress, _current_auth_url, _local_server_instance
 
     if not is_client_secret_present():
         raise FileNotFoundError("secrets/client_secret.json file nahi mili! Pehle file rakhein.")
 
-    if _auth_in_progress:
-        return {"status": "already_running", "message": "Login pehle se background mein chal raha hai. Browser check karein."}
+    # Clean up any stale server
+    if _local_server_instance:
+        try:
+            _local_server_instance.server_close()
+        except Exception:
+            pass
+
+    success_html = """<!DOCTYPE html>
+<html>
+<head>
+    <title>X Gen Clips — YouTube Connected!</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f3f4f6; text-align: center; padding: 60px 20px; }
+        .card { background: #111827; border: 1px solid #374151; max-width: 520px; margin: 0 auto; border-radius: 16px; padding: 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h1 { color: #10b981; font-size: 26px; margin-bottom: 12px; }
+        p { color: #9ca3af; font-size: 16px; line-height: 1.6; }
+        .badge { display: inline-block; background: #064e3b; color: #6ee7b7; padding: 6px 14px; border-radius: 999px; font-weight: bold; margin-bottom: 18px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="badge">✓ Connected</div>
+        <h1>YouTube Safalta Se Jud Gaya!</h1>
+        <p>Aapka Google account X Gen Clips se jud chuka hai. Ab aap is tab ko band kar sakte hain aur app mein jakar clips direct YouTube par upload kar sakte hain.</p>
+    </div>
+</body>
+</html>"""
+
+    flow = InstalledAppFlow.from_client_secrets_file(
+        str(CLIENT_SECRET_FILE),
+        scopes=SCOPES
+    )
+    wsgi_app = _RedirectWSGIApp(success_html)
+    server = wsgiref.simple_server.make_server(
+        'localhost',
+        LOCAL_PORT,
+        wsgi_app,
+        server_class=_ExclusiveWSGIServer,
+        handler_class=_WSGIRequestHandler
+    )
+    flow.redirect_uri = f"http://localhost:{server.server_port}/"
+    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+
+    _current_auth_url = auth_url
+    _auth_in_progress = True
+    _local_server_instance = server
+
+    # Try launching desktop browser in foreground via Windows shell
+    try:
+        os.startfile(auth_url)
+    except Exception:
+        try:
+            webbrowser.open(auth_url, new=1, autoraise=True)
+        except Exception:
+            pass
 
     def _auth_worker():
-        global _auth_in_progress
-        _auth_in_progress = True
+        global _auth_in_progress, _current_auth_url, _local_server_instance
         try:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(CLIENT_SECRET_FILE),
-                scopes=SCOPES
-            )
-            # Run local server on designated port with browser prompt
-            creds = flow.run_local_server(
-                port=LOCAL_PORT,
-                prompt="consent",
-                authorization_prompt_message="Google authorization ke liye browser window khul rahi hai...",
-                success_message="<h1>✓ Authentication Successful!</h1><p>Aapka YouTube account X Gen Clips se jud gaya hai. Ab aap is tab ko band kar sakte hain.</p>"
-            )
-            if creds:
-                SECRETS_DIR.mkdir(parents=True, exist_ok=True)
-                TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
-                logger.info("YouTube token.json successfully saved!")
+            server.timeout = 300  # 5 minutes
+            server.handle_request()
+            if wsgi_app.last_request_uri:
+                auth_resp = wsgi_app.last_request_uri.replace("http://", "https://")
+                flow.fetch_token(authorization_response=auth_resp)
+                creds = flow.credentials
+                if creds:
+                    SECRETS_DIR.mkdir(parents=True, exist_ok=True)
+                    TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+                    logger.info("YouTube token.json successfully saved!")
         except Exception as e:
-            logger.error(f"Error during OAuth flow: {e}")
+            logger.error(f"Error during OAuth callback: {e}")
         finally:
+            try:
+                server.server_close()
+            except Exception:
+                pass
             _auth_in_progress = False
+            _current_auth_url = None
+            _local_server_instance = None
 
     _auth_thread = threading.Thread(target=_auth_worker, daemon=True)
     _auth_thread.start()
 
     return {
         "status": "started",
-        "message": "Google Login browser mein open kiya ja raha hai. Apne test account se login karke 'Continue/Allow' karein."
+        "auth_url": auth_url,
+        "message": "Google Login URL tayar ho gaya hai. Browser mein sign in karke 'Allow' karein."
     }
 
 def disconnect_youtube() -> Dict[str, Any]:
     """Deletes token.json to disconnect current account."""
+    cancel_auth()
     if TOKEN_FILE.exists():
         TOKEN_FILE.unlink(missing_ok=True)
     return {"status": "disconnected", "message": "YouTube account safely disconnect ho gaya hai."}

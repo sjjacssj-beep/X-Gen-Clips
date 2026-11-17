@@ -646,6 +646,10 @@ def connect_youtube():
 def disconnect_youtube():
     return youtube_engine.disconnect_youtube()
 
+@app.post("/api/youtube/cancel-auth")
+def cancel_youtube_auth():
+    return youtube_engine.cancel_auth()
+
 @app.post("/api/youtube/upload")
 def upload_clip_to_youtube(req: YouTubeUploadRequest):
     video_path = OUTPUTS_DIR / req.filename

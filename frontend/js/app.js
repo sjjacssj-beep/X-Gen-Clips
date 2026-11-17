@@ -292,14 +292,35 @@ const App = {
         }
       }
 
-      if (msg && data.message) {
-        msg.innerText = data.message;
+      if (msg) {
+        if (data.in_progress && data.auth_url) {
+          msg.innerHTML = `
+            <div style="margin: 8px 0;">
+              <p style="color: #f59e0b; font-weight: 600; margin-bottom: 8px;">
+                ⚠️ Agar Google Login window automatic nahi khuli, to niche diye button par click karein:
+              </p>
+              <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <a href="${data.auth_url}" target="_blank" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(37,99,235,0.4);">
+                  🌐 Yahan Click Karke Google Login Kholein ↗
+                </a>
+                <button type="button" onclick="App.cancelYouTubeAuth()" style="background: #374151; color: #e5e7eb; padding: 10px 16px; border-radius: 8px; border: 1px solid #4b5563; font-weight: 600; cursor: pointer;">
+                  ❌ Cancel Login
+                </button>
+              </div>
+            </div>
+          `;
+        } else if (data.message) {
+          msg.innerText = data.message;
+        }
       }
 
       if (connectBtn && disconnectBtn) {
         if (data.connected) {
           connectBtn.style.display = 'none';
           disconnectBtn.style.display = 'inline-block';
+        } else if (data.in_progress) {
+          connectBtn.style.display = 'none';
+          disconnectBtn.style.display = 'none';
         } else {
           connectBtn.style.display = 'inline-block';
           connectBtn.innerText = data.status === 'expired' ? '🔄 Dobara Jodo' : '🔗 YouTube Jodo';
@@ -318,14 +339,19 @@ const App = {
 
   async connectYouTube() {
     const connectBtn = document.getElementById('ytConnectBtn');
-    if (connectBtn) connectBtn.innerText = "⏳ Browser open kar rahe hain...";
+    if (connectBtn) connectBtn.innerText = "⏳ Link generate ho rahi hai...";
 
     try {
       const res = await fetch('/api/youtube/connect', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Connect shuru nahi ho paya.");
 
-      alert(data.message || "Browser mein Google login window open ho rahi hai. Apna test account choose karke Allow karein.");
+      // Open OAuth URL directly in new window
+      if (data.auth_url) {
+        window.open(data.auth_url, '_blank');
+      }
+
+      await this.checkYouTubeStatus();
 
       // Poll status every 2s until connected
       if (this.ytAuthPollTimer) clearInterval(this.ytAuthPollTimer);
@@ -337,7 +363,7 @@ const App = {
           clearInterval(this.ytAuthPollTimer);
           this.ytAuthPollTimer = null;
           alert("✓ Badhaai ho! Aapka YouTube account kamyaabi se jud gaya hai.");
-        } else if (attempts > 60) {
+        } else if (attempts > 90) {
           clearInterval(this.ytAuthPollTimer);
           this.ytAuthPollTimer = null;
         }
@@ -345,6 +371,17 @@ const App = {
     } catch (e) {
       alert("YouTube Connect Error: " + e.message);
       this.checkYouTubeStatus();
+    }
+  },
+
+  async cancelYouTubeAuth() {
+    try {
+      await fetch('/api/youtube/cancel-auth', { method: 'POST' });
+      if (this.ytAuthPollTimer) clearInterval(this.ytAuthPollTimer);
+      this.ytAuthPollTimer = null;
+      await this.checkYouTubeStatus();
+    } catch (e) {
+      console.error(e);
     }
   },
 
