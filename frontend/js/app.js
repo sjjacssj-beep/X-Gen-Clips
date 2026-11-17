@@ -182,7 +182,6 @@ const App = {
       this.loadProfiles();
       this.loadLLMProviders();
     }
-    }
   },
 
   togglePasswordVisibility(inputId) {
