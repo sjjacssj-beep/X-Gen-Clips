@@ -1,4 +1,5 @@
 import math
+import unicodedata
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -72,7 +73,7 @@ def generate_hormozi_ass(
     style_key: str = "hormozi",
     position: str = "bottom",
     font_size: int = 60,
-    font_name: str = "Noto Sans Devanagari"
+    font_name: str = "Nirmala UI"
 ) -> Path:
     """
     Generates auto-fitted, phone-camera-safe word-by-word karaoke subtitles in .ass format.
@@ -150,8 +151,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not chunk:
             continue
 
-        # Auto-fit calculation: measure total characters in this line
-        clean_words = [str(w.get("word") or w.get("w", "")).strip().upper() for w in chunk]
+        # Clean and normalize words (NFC canonical composition prevents broken Devanagari matras/dotted circles)
+        clean_words = []
+        for w in chunk:
+            raw = unicodedata.normalize("NFC", str(w.get("word") or w.get("w", "")).strip())
+            # Uppercase ASCII words only; preserve Devanagari script integrity
+            clean_words.append(raw.upper() if raw.isascii() else raw)
         line_chars = sum(len(cw) for cw in clean_words) + (len(clean_words) - 1)
 
         # Dynamic Auto-Fit: If line is long (> 14 chars), scale font size so it NEVER overflows safe width (880px)

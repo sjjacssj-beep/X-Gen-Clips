@@ -13,6 +13,7 @@ const App = {
     await this.loadSettings();
     this.initSSE();
     this.checkActiveStatus();
+    this.checkYouTubeStatus();
     this.loadClips();
     this.checkHealthBadge();
     this.bindEvents();
@@ -258,6 +259,222 @@ const App = {
     }
   },
 
+  /* ======================================================== */
+  /* YOUTUBE DATA API & OAUTH METHODS                         */
+  /* ======================================================== */
+  ytAuthPollTimer: null,
+  isYouTubeConnected: false,
+
+  async checkYouTubeStatus() {
+    const badge = document.getElementById('ytStatusBadge');
+    const msg = document.getElementById('ytStatusMsg');
+    const connectBtn = document.getElementById('ytConnectBtn');
+    const disconnectBtn = document.getElementById('ytDisconnectBtn');
+
+    try {
+      const res = await fetch('/api/youtube/status');
+      const data = await res.json();
+      this.isYouTubeConnected = !!data.connected;
+
+      if (badge) {
+        if (data.connected) {
+          badge.className = 'health-badge badge-good';
+          badge.innerText = '🟢 Connected';
+        } else if (data.in_progress) {
+          badge.className = 'health-badge badge-warning';
+          badge.innerText = '⏳ Authenticating...';
+        } else if (data.status === 'expired') {
+          badge.className = 'health-badge badge-danger';
+          badge.innerText = '🔴 Login Expired';
+        } else {
+          badge.className = 'health-badge badge-warning';
+          badge.innerText = '🔴 Not Connected';
+        }
+      }
+
+      if (msg && data.message) {
+        msg.innerText = data.message;
+      }
+
+      if (connectBtn && disconnectBtn) {
+        if (data.connected) {
+          connectBtn.style.display = 'none';
+          disconnectBtn.style.display = 'inline-block';
+        } else {
+          connectBtn.style.display = 'inline-block';
+          connectBtn.innerText = data.status === 'expired' ? '🔄 Dobara Jodo' : '🔗 YouTube Jodo';
+          disconnectBtn.style.display = 'none';
+        }
+      }
+      return data;
+    } catch (e) {
+      if (badge) {
+        badge.className = 'health-badge badge-danger';
+        badge.innerText = 'Error';
+      }
+      return { connected: false };
+    }
+  },
+
+  async connectYouTube() {
+    const connectBtn = document.getElementById('ytConnectBtn');
+    if (connectBtn) connectBtn.innerText = "⏳ Browser open kar rahe hain...";
+
+    try {
+      const res = await fetch('/api/youtube/connect', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Connect shuru nahi ho paya.");
+
+      alert(data.message || "Browser mein Google login window open ho rahi hai. Apna test account choose karke Allow karein.");
+
+      // Poll status every 2s until connected
+      if (this.ytAuthPollTimer) clearInterval(this.ytAuthPollTimer);
+      let attempts = 0;
+      this.ytAuthPollTimer = setInterval(async () => {
+        attempts++;
+        const st = await this.checkYouTubeStatus();
+        if (st.connected) {
+          clearInterval(this.ytAuthPollTimer);
+          this.ytAuthPollTimer = null;
+          alert("✓ Badhaai ho! Aapka YouTube account kamyaabi se jud gaya hai.");
+        } else if (attempts > 60) {
+          clearInterval(this.ytAuthPollTimer);
+          this.ytAuthPollTimer = null;
+        }
+      }, 2000);
+    } catch (e) {
+      alert("YouTube Connect Error: " + e.message);
+      this.checkYouTubeStatus();
+    }
+  },
+
+  async disconnectYouTube() {
+    if (!confirm("Kya aap sach mein YouTube account disconnect karna chahte hain?")) return;
+    try {
+      const res = await fetch('/api/youtube/disconnect', { method: 'POST' });
+      const data = await res.json();
+      alert(data.message || "Account disconnect ho gaya.");
+      await this.checkYouTubeStatus();
+    } catch (e) {
+      alert("Disconnect fail hua: " + e.message);
+    }
+  },
+
+  async uploadSingleClipToYouTube(clipId, filename) {
+    if (!this.isYouTubeConnected) {
+      const st = await this.checkYouTubeStatus();
+      if (!st.connected) {
+        const goToSettings = confirm("YouTube abhi connected nahi hai!\n\nKya aap Settings tab mein jaakar 'YouTube Jodo' se apna account link karna chahte hain?");
+        if (goToSettings) {
+          this.switchTab('settings');
+        }
+        return;
+      }
+    }
+
+    const btn = document.getElementById(`yt-upload-btn-${clipId}`);
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = "⏳ Uploading... (0%)";
+      btn.style.opacity = "0.85";
+    }
+
+    const title = document.getElementById(`yt-title-${clipId}`)?.value;
+    const desc = document.getElementById(`yt-desc-${clipId}`)?.value;
+    const tagsRaw = document.getElementById(`yt-tags-${clipId}`)?.value || "";
+    const tags = tagsRaw.split(/\s+/).filter(t => t.length > 0);
+
+    const payload = {
+      filename: filename,
+      title: title,
+      description: desc,
+      hashtags: tags,
+      privacy: "private"
+    };
+
+    try {
+      const res = await fetch('/api/youtube/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || "Upload fail hua.");
+      }
+
+      if (btn) {
+        btn.disabled = false;
+        btn.outerHTML = `
+          <a href="${data.video_url}" target="_blank" class="clay-btn" style="background: rgba(16,185,129,0.18); border: 1px solid #10B981; color: #10B981; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+            ✓ Uploaded! 🔗 Open on YouTube ↗
+          </a>
+        `;
+      }
+
+      let msg = `✓ Clip YouTube par Private video ke roop mein successfully upload ho gayi!\n\nLink: ${data.video_url}`;
+      if (data.is_locked_private) {
+        msg += `\n\n⚠ Note: ${data.warning_message || "Video Google developer restriction ke karan 'Locked Private' hai (sirf aapke test user account ko dikhegi)."}`;
+      }
+      alert(msg);
+      this.loadClips();
+    } catch (e) {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerText = "🔴 YouTube pe bhejo";
+        btn.style.opacity = "1";
+      }
+      alert("YouTube Upload Error:\n" + e.message);
+    }
+  },
+
+  async uploadAllClipsToYouTube() {
+    if (!this.isYouTubeConnected) {
+      const st = await this.checkYouTubeStatus();
+      if (!st.connected) {
+        const goToSettings = confirm("YouTube abhi connected nahi hai!\n\nKya aap Settings tab mein jaakar 'YouTube Jodo' se apna account link karna chahte hain?");
+        if (goToSettings) {
+          this.switchTab('settings');
+        }
+        return;
+      }
+    }
+
+    if (!confirm("Kya aap sabhi ready clips ko YouTube par as Private videos upload karna chahte hain?")) {
+      return;
+    }
+
+    const btn = document.getElementById('uploadAllYtBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = "⏳ Sab upload ho rahe hain...";
+    }
+
+    try {
+      const res = await fetch('/api/youtube/upload-all', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || "Upload fail hua.");
+      }
+
+      let summary = `✓ Kul ${data.uploaded_count} clips successfully YouTube par upload ho gayi hain!`;
+      if (data.errors && data.errors.length > 0) {
+        summary += `\n\nErrors:\n` + data.errors.join('\n');
+      }
+      alert(summary);
+      this.loadClips();
+    } catch (e) {
+      alert("YouTube Batch Upload Error:\n" + e.message);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerText = "🚀 Sab YouTube pe bhejo";
+      }
+    }
+  },
+
   async saveSettingKey(k, v) {
     const payload = {};
     payload[k] = v;
@@ -363,6 +580,15 @@ const App = {
       try {
         const data = JSON.parse(e.data);
         this.showError(data.message);
+      } catch (err) {}
+    });
+
+    this.eventSource.addEventListener('youtube_progress', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        document.querySelectorAll(`[id^="yt-upload-btn-"]`).forEach(b => {
+          b.innerText = `⏳ Uploading... (${data.progress}%)`;
+        });
       } catch (err) {}
     });
   },
@@ -786,6 +1012,15 @@ const App = {
 
           <!-- Action Toolbar -->
           <div class="clip-actions">
+            ${clip.youtube_upload && clip.youtube_upload.video_url ? `
+              <a href="${clip.youtube_upload.video_url}" target="_blank" class="clay-btn" style="background: rgba(16,185,129,0.18); border: 1px solid #10B981; color: #10B981; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+                ✓ YouTube Link ↗
+              </a>
+            ` : `
+              <button id="yt-upload-btn-${clip.id}" class="clay-btn" onclick="App.uploadSingleClipToYouTube(${clip.id}, '${clip.filename}')" style="background: linear-gradient(135deg, #FF0000, #CC0000); color: #fff; font-weight: 700; border: none; box-shadow: 0 4px 14px rgba(255,0,0,0.35);">
+                🔴 YouTube pe bhejo
+              </button>
+            `}
             <button class="clay-btn clay-btn-primary btn-copy-all" onclick="SocialManager.copyAllForPlatform(${clip.id}, 'youtube')">
               📋 Sab Copy Karo
             </button>

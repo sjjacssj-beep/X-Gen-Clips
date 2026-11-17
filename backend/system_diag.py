@@ -38,10 +38,15 @@ def get_system_health(api_key: str = None) -> Dict[str, Any]:
     yt_dlp_ok = False
     yt_dlp_version = "Unknown"
     try:
-        r = subprocess.run([sys.executable, "-m", "yt_dlp", "--version"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run([sys.executable, "-m", "yt_dlp", "--version"], capture_output=True, text=True, timeout=10)
         if r.returncode == 0:
             yt_dlp_ok = True
             yt_dlp_version = r.stdout.strip()
+        elif shutil.which("yt-dlp"):
+            r2 = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True, timeout=10)
+            if r2.returncode == 0:
+                yt_dlp_ok = True
+                yt_dlp_version = r2.stdout.strip()
     except Exception:
         pass
 

@@ -18,7 +18,8 @@
   - Hook Title & Watermarks safe zone (`y=340px`) me float karte hain taaki camera notch / dynamic island me na katein.
   - Subtitles lower-third sweet spot (`margin_v = 440px`) par render hote hain, Instagram Reels / YouTube Shorts ke channel name aur audio ticker ke upar.
   - Dynamic font scaling: 2-3 words per chunk auto-resizes to prevent screen clipping.
-- **🔥 Trending Word-by-Word Captions:** 6 built-in themes (Hormozi Gold, MrBeast High-Contrast, Neon Cyan, Hot Pink, Electric Mint, Clean White) with active word karaoke pop.
+- **🔥 Trending Word-by-Word Captions:** 6 built-in themes (Hormozi Gold, MrBeast High-Contrast, Neon Cyan, Hot Pink, Electric Mint, Clean White) with active word karaoke pop and full Noto Sans Devanagari Hindi font support.
+- **🔴 Direct YouTube Upload & OAuth 2.0:** 1-click resumable upload to YouTube as Private videos with automatic title, description, and hashtag injection. Includes post-upload locked-private detection and Hinglish error messages.
 - **🤖 Autonomous Viral Kit:** Har clip ke saath automatically 3 Curiosity Titles, SEO Description, 8-12 Viral Hashtags, Hook Lines, aur Viral Scores generate hote hain with 1-click copy & platform tabs (YouTube Shorts, Instagram Reels, TikTok).
 - **🎛️ Live Phone Mockup Preview:** In-browser interactive preview with 🛡️ Safe Area Guides toggle and A/B hook variant testing.
 
@@ -103,5 +104,34 @@ X-Gen-Clips/
 ---
 
 ## 📄 License
+
+## 🔴 YouTube Direct Upload Setup (OAuth 2.0 Desktop)
+
+X Gen Clips me direct YouTube upload feature built-in hai. Ye feature official Google YouTube Data API v3 aur OAuth 2.0 Desktop Flow use karta hai:
+
+### Setup Steps:
+1. **Google Cloud Console:**
+   - [Google Cloud Console](https://console.cloud.google.com/) me jayein aur ek project banayein (`xgenclips`).
+   - **APIs & Services > Library** me jaakar **YouTube Data API v3** enable karein.
+   - **OAuth consent screen** me Publishing status **Testing** rakhein, aur apna Gmail ID **Test users** me add karein.
+   - **Credentials > Create Credentials > OAuth client ID** me application type **Desktop app** choose karein.
+   - Download ki gayi JSON file ko `secrets/client_secret.json` naam se project ke `secrets/` folder me rakhein (Note: Ye folder `.gitignore` me secure hai aur git me commit nahi hota).
+
+2. **App me YouTube Jodo:**
+   - App open karein (`http://localhost:9999`).
+   - **Settings** tab me jayein, wahan **YouTube Direct Upload & OAuth** card dikhega.
+   - **🔗 YouTube Jodo** button dabayein.
+   - Aapke default browser me Google authorization window khulegi.
+   - Apna Test User wala Gmail select karein aur permissions allow karein.
+   - Browser me authorization successful hone par app me status **🟢 Connected** ho jayega.
+
+3. **Clips Upload Karna:**
+   - Kisi bhi clip card par **🔴 YouTube pe bhejo** dabayein ya sabhi clips ko ek saath upload karne ke liye **🚀 Sab YouTube pe bhejo** dabayein.
+   - Video automatically **Private** mode me upload hogi aur AI-generated Title, Description, aur Hashtags YouTube par inject ho jayenge.
+   - Upload hote hi direct YouTube video link (`https://youtu.be/...`) mil jayega!
+
+---
+
+## License
 
 MIT License. Free to use for personal and commercial projects.

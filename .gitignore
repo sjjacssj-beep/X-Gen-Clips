@@ -9,6 +9,10 @@ env/
 *.env
 .env.local
 !.env.example
+secrets/
+client_secret*.json
+token.json
+*.token.json
 
 # Python caches
 __pycache__/

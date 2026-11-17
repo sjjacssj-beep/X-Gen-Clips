@@ -38,6 +38,7 @@ from . import pipeline
 from . import gemini_engine
 from . import subtitle_engine
 from . import system_diag
+from . import youtube_engine
 from .queue_manager import job_manager, load_settings, save_settings, load_history, save_to_history, clear_workspace
 
 def log_event(msg: str):
@@ -129,6 +130,13 @@ class BatchRequest(BaseModel):
     urls: List[str]
     preset: str = "podcast"
     clips_count: int = 1
+
+class YouTubeUploadRequest(BaseModel):
+    filename: str
+    privacy: str = "private"
+    title: Optional[str] = None
+    description: Optional[str] = None
+    hashtags: Optional[List[str]] = None
 
 def worker_process_job(req: ProcessRequest):
     global state
@@ -224,7 +232,7 @@ def worker_process_job(req: ProcessRequest):
                     style_key=req.caption_color,
                     position=req.caption_position,
                     font_size=req.caption_size,
-                    font_name=settings.get("brand_font", "Noto Sans Devanagari")
+                    font_name=settings.get("brand_font", "Nirmala UI")
                 )
 
                 # Sanitize clip filename with prefix xgenclips_
@@ -619,6 +627,127 @@ def health_endpoint():
 @app.post("/api/health/fix")
 def health_fix_endpoint(component: str):
     return system_diag.auto_fix_component(component)
+
+# ========================================================
+# YOUTUBE UPLOAD ENDPOINTS
+# ========================================================
+@app.get("/api/youtube/status")
+def get_youtube_status():
+    return youtube_engine.check_youtube_status()
+
+@app.post("/api/youtube/connect")
+def connect_youtube():
+    try:
+        return youtube_engine.start_interactive_auth()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/youtube/disconnect")
+def disconnect_youtube():
+    return youtube_engine.disconnect_youtube()
+
+@app.post("/api/youtube/upload")
+def upload_clip_to_youtube(req: YouTubeUploadRequest):
+    video_path = OUTPUTS_DIR / req.filename
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail=f"Clip file '{req.filename}' nahi mili.")
+
+    meta_path = video_path.with_suffix(".json")
+    meta = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    title = req.title or meta.get("title") or req.filename
+    p_data = meta.get("platforms", {}).get("youtube", {})
+    if p_data.get("title"):
+        title = p_data.get("title")
+
+    desc = req.description or p_data.get("description") or f"{title}\n\nUploaded via X Gen Clips."
+    tags = req.hashtags or p_data.get("hashtags") or meta.get("hook_options") or []
+
+    def on_prog(pct, msg):
+        job_manager.broadcast("youtube_progress", {
+            "filename": req.filename,
+            "progress": pct,
+            "message": msg
+        })
+
+    try:
+        res = youtube_engine.upload_clip_to_youtube(
+            video_path=video_path,
+            title=title,
+            description=desc,
+            hashtags=tags,
+            privacy_status=req.privacy,
+            progress_callback=on_prog
+        )
+        if meta_path.exists():
+            meta["youtube_upload"] = res
+            meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        job_manager.broadcast("youtube_completed", res)
+        return res
+    except Exception as e:
+        hinglish_err = youtube_engine.format_error_hinglish(e)
+        job_manager.broadcast("youtube_error", {
+            "filename": req.filename,
+            "message": hinglish_err
+        })
+        raise HTTPException(status_code=400, detail=hinglish_err)
+
+@app.post("/api/youtube/upload-all")
+def upload_all_to_youtube():
+    json_files = list(OUTPUTS_DIR.glob("xgenclips_*.json")) + list(OUTPUTS_DIR.glob("clip_*.json"))
+    if not json_files:
+        raise HTTPException(status_code=404, detail="Upload karne ke liye koi clip nahi mili.")
+
+    results = []
+    errors = []
+    for jf in json_files:
+        try:
+            d = json.loads(jf.read_text(encoding="utf-8"))
+            fn = d.get("filename")
+            if not fn:
+                continue
+            vp = OUTPUTS_DIR / fn
+            if not vp.exists():
+                continue
+
+            p_data = d.get("platforms", {}).get("youtube", {})
+            title = p_data.get("title") or d.get("title") or fn
+            desc = p_data.get("description") or f"{title}\n\nUploaded via X Gen Clips."
+            tags = p_data.get("hashtags") or []
+
+            def on_p(pct, msg):
+                job_manager.broadcast("youtube_progress", {
+                    "filename": fn,
+                    "progress": pct,
+                    "message": msg
+                })
+
+            res = youtube_engine.upload_clip_to_youtube(
+                video_path=vp,
+                title=title,
+                description=desc,
+                hashtags=tags,
+                privacy_status="private",
+                progress_callback=on_p
+            )
+            d["youtube_upload"] = res
+            jf.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
+            results.append(res)
+        except Exception as e:
+            h_err = youtube_engine.format_error_hinglish(e)
+            errors.append(f"{jf.stem}: {h_err}")
+
+    return {
+        "status": "completed",
+        "uploaded_count": len(results),
+        "results": results,
+        "errors": errors
+    }
 
 @app.get("/video/{filename}")
 @app.get("/outputs/{filename}")
