@@ -30,7 +30,11 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 SOUNDS_DIR = BASE_DIR / "sounds"
 ENV_FILE = BASE_DIR / ".env"
 LOGS_FILE = BASE_DIR / "logs.txt"
+MODELS_CACHE_DIR = BASE_DIR / "models_cache"
 
+# Offload HuggingFace / Faster-Whisper model cache to E: drive
+os.environ["HF_HOME"] = str(MODELS_CACHE_DIR)
+MODELS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -42,6 +46,7 @@ from . import youtube_engine
 from .llm_engine import llm_chain
 from .profile_manager import profile_manager
 from .shorts_validator import validate_shorts_compliance, auto_fix_shorts_compliance
+from . import tagdi_editor
 from .tagdi_editor import render_tagdi_clip
 from .bundle_importer import import_and_process_bundle_item, unpack_bundle_zip
 from .virality_engine import virality_engine
@@ -77,7 +82,7 @@ app.add_middleware(
 @app.middleware("http")
 async def add_no_cache_headers(request: Request, call_next):
     response = await call_next(request)
-    if not request.url.path.startswith("/video"):
+    if not (request.url.path.startswith("/video") or request.url.path.startswith("/outputs")):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -219,7 +224,15 @@ def worker_process_job(req: ProcessRequest):
             req.min_length = max(60, req.min_length)
             req.max_length = min(175, max(120, req.max_length))
 
-        # Step 1: Fast Audio-Only Download & 16kHz conversion
+        # Step 1: Fast Audio-Only Download & 16kHz conversion (Auto-clean temp leftovers)
+        try:
+            for old_part in OUTPUTS_DIR.glob("*.part"):
+                old_part.unlink(missing_ok=True)
+            for old_raw in OUTPUTS_DIR.glob("raw_audio_*.*"):
+                old_raw.unlink(missing_ok=True)
+        except Exception:
+            pass
+
         update_prog(12, f"Downloading audio (16kHz mono, {free_gb}GB free)...")
         wav_path, vid_id = pipeline.download_audio_16k(req.url, OUTPUTS_DIR)
 
@@ -434,6 +447,17 @@ Hashtags: {' '.join(p_data.get('tiktok', {}).get('hashtags', []))}
 """
                 txt_file.write_text(txt_content, encoding="utf-8")
 
+                # Mirror rendered clip & metadata to 5 TB Google Drive (V:) if connected
+                v_drive = Path("V:/XGenClips_Outputs")
+                if v_drive.exists():
+                    try:
+                        shutil.copy2(out_clip, v_drive / out_clip.name)
+                        if json_file.exists():
+                            shutil.copy2(json_file, v_drive / json_file.name)
+                        log_event(f"✓ Mirrored {out_name} to 5TB Google Drive (V:)")
+                    except Exception as mirror_err:
+                        logger.warning(f"Google Drive mirroring error: {mirror_err}")
+
                 # Progressive delivery event broadcast
                 job_manager.broadcast("clip_ready", clip_record)
                 return clip_record
@@ -568,6 +592,7 @@ def get_all_clips():
         if (p.name.startswith("xgenclips_") or p.name.startswith("clip_"))
         and not p.name.startswith("source_")
         and not p.name.startswith("section_")
+        and p.stat().st_size > 100 * 1024
     ]
     mp4_files = sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)
     for idx, f in enumerate(mp4_files, 1):
@@ -823,6 +848,11 @@ def upload_clip_to_youtube(req: YouTubeUploadRequest):
         })
 
     try:
+        # Pre-upload YouTube Shorts compliance check & auto-fix
+        is_compliant, _, _ = validate_shorts_compliance(video_path)
+        if not is_compliant:
+            auto_fix_shorts_compliance(video_path, video_path)
+
         res = youtube_engine.upload_clip_to_youtube(
             video_path=video_path,
             title=title,
@@ -873,6 +903,11 @@ def upload_all_to_youtube():
                     "progress": pct,
                     "message": msg
                 })
+
+            # Pre-upload YouTube Shorts compliance check & auto-fix
+            is_compliant, _, _ = validate_shorts_compliance(vp)
+            if not is_compliant:
+                auto_fix_shorts_compliance(vp, vp)
 
             res = youtube_engine.upload_clip_to_youtube(
                 video_path=vp,
@@ -994,7 +1029,8 @@ def serve_video(filename: str):
     path = OUTPUTS_DIR / filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="File nahi mili.")
-    return FileResponse(path, media_type="video/mp4")
+    media_type = "video/mp4" if path.suffix.lower() == ".mp4" else ("image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else None)
+    return FileResponse(path, media_type=media_type)
 
 if __name__ == "__main__":
     import uvicorn

@@ -1249,6 +1249,8 @@ const App = {
       </div>
     `).join('');
 
+    const posterAttr = (clip.covers && clip.covers.length > 0) ? `poster="/outputs/${clip.covers[0]}"` : '';
+
     return `
       <div class="clay-card clip-card" id="clip-${clip.id}">
         ${topPickBadge}
@@ -1265,7 +1267,7 @@ const App = {
               <div class="safe-zone-center">🎯 Caption Sweet Spot</div>
               <div class="safe-zone-bottom">📱 Reels UI Safe</div>
             </div>
-            <video id="video-player-${clip.id}" controls playsinline preload="metadata" poster="/video/${clip.filename}">
+            <video id="video-player-${clip.id}" controls playsinline preload="metadata" ${posterAttr}>
               <source src="/video/${clip.filename}" type="video/mp4">
             </video>
           </div>

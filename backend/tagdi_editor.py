@@ -189,9 +189,9 @@ def render_tagdi_clip(
 
     if extra_sfx > 0:
         a_inputs = "".join([f"[{i}:a]" for i in range(1 + extra_sfx)])
-        a_filter = f"{a_inputs}amix=inputs={1 + extra_sfx}:duration=first:dropout_transition=2,loudnorm=I=-14:LRA=7:TP=-1.5[a_out]"
+        a_filter = f"{a_inputs}amix=inputs={1 + extra_sfx}:duration=first:dropout_transition=2,loudnorm=I=-14:LRA=7:TP=-1.5,aresample=48000[a_out]"
     else:
-        a_filter = "loudnorm=I=-14:LRA=7:TP=-1.5[a_out]"
+        a_filter = "[0:a]loudnorm=I=-14:LRA=7:TP=-1.5,aresample=48000[a_out]"
 
     full_filter = f"{filter_complex};{a_filter}"
 
@@ -202,9 +202,13 @@ def render_tagdi_clip(
         "-c:v", "h264_nvenc",
         "-preset", "p4",
         "-cq", "18",
+        "-profile:v", "high",
+        "-level", "4.1",
+        "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-b:a", "192k",
-        "-pix_fmt", "yuv420p",
+        "-ar", "48000",
+        "-ac", "2",
         "-movflags", "+faststart",
         str(out_clip_path)
     ])

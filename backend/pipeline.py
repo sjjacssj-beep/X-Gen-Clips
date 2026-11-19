@@ -525,9 +525,9 @@ def render_clip_single_pass(
     if extra_inputs > 0:
         # Mix original audio with SFX, then normalize loudness
         a_inputs = "".join([f"[{i}:a]" for i in range(1 + extra_inputs)])
-        a_filter = f"{a_inputs}amix=inputs={1 + extra_inputs}:duration=first:dropout_transition=2,loudnorm=I=-14:LRA=7:TP=-1.5[a_out]"
+        a_filter = f"{a_inputs}amix=inputs={1 + extra_inputs}:duration=first:dropout_transition=2,loudnorm=I=-14:LRA=7:TP=-1.5,aresample=48000[a_out]"
     else:
-        a_filter = "loudnorm=I=-14:LRA=7:TP=-1.5[a_out]"
+        a_filter = "[0:a]loudnorm=I=-14:LRA=7:TP=-1.5,aresample=48000[a_out]"
 
     full_filter = f"{filter_complex};{a_filter}"
 
@@ -542,8 +542,12 @@ def render_clip_single_pass(
         cmd.extend(["-preset", "veryfast", "-crf", "22", "-threads", "0"])
 
     cmd.extend([
+        "-profile:v", "high",
+        "-level", "4.1",
         "-c:a", "aac",
-        "-b:a", "160k",
+        "-b:a", "192k",
+        "-ar", "48000",
+        "-ac", "2",
         "-pix_fmt", "yuv420p",
         "-movflags", "+faststart",
         str(out_clip_path)
@@ -563,8 +567,12 @@ def render_clip_single_pass(
             "-c:v", "libx264",
             "-preset", "veryfast",
             "-crf", "23",
+            "-profile:v", "high",
+            "-level", "4.1",
             "-c:a", "aac",
-            "-b:a", "128k",
+            "-b:a", "192k",
+            "-ar", "48000",
+            "-ac", "2",
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
             str(out_clip_path)

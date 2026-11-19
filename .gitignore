@@ -43,6 +43,7 @@ logs.txt
 *.log
 .tmp/
 temp/
+models_cache/
 
 # OS / Editor files
 .DS_Store
