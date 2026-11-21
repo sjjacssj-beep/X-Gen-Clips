@@ -48,6 +48,7 @@ from .profile_manager import profile_manager
 from .shorts_validator import validate_shorts_compliance, auto_fix_shorts_compliance
 from . import tagdi_editor
 from .tagdi_editor import render_tagdi_clip
+from . import title_desc_engine
 from .bundle_importer import import_and_process_bundle_item, unpack_bundle_zip
 from .virality_engine import virality_engine
 from . import long_video_pipeline
@@ -161,6 +162,16 @@ class SettingsRequest(BaseModel):
     brand_watermark: Optional[str] = None
     brand_font: Optional[str] = None
     brand_color: Optional[str] = None
+    emoji_level: Optional[str] = None  # "off" | "low" | "medium"
+
+class EmojiCycleRequest(BaseModel):
+    text: str
+    mood: str = "shock_action"
+
+class EmojiToggleRequest(BaseModel):
+    text: str
+    remove: bool = True
+    mood: str = "shock_action"
 
 class BatchRequest(BaseModel):
     urls: List[str]
@@ -397,6 +408,9 @@ def worker_process_job(req: ProcessRequest):
                     "filename": out_name,
                     "title": candidate.get("title", f"Clip {idx}"),
                     "title_options": candidate.get("title_options", [candidate.get("title")]),
+                    "title_variants": candidate.get("title_variants", []),
+                    "description": candidate.get("description", ""),
+                    "description_options": candidate.get("description_options", []),
                     "hook_line": hook_line,
                     "hook_options": candidate.get("hook_options", [hook_line]),
                     "viral_score": v_res["score"],
@@ -603,6 +617,15 @@ def get_all_clips():
                 data["id"] = idx
                 data["filename"] = f.name
                 data["filesize"] = f"{f.stat().st_size / (1024 * 1024):.1f} MB"
+                if "title_variants" not in data:
+                    t_opts = data.get("title_options", [data.get("title", f"Clip {idx}")])
+                    data["title_variants"] = [{"id": i+1, "title": t, "angle": f"Option {i+1}"} for i, t in enumerate(t_opts[:3])]
+                if "description_options" not in data:
+                    yt_desc = data.get("platforms", {}).get("youtube", {}).get("description") or data.get("description", "")
+                    data["description_options"] = [
+                        {"id": 1, "label": "Story / Hype Angle", "text": yt_desc},
+                        {"id": 2, "label": "Action / Gameplay Angle", "text": yt_desc}
+                    ]
                 clips.append(data)
                 continue
             except Exception:
@@ -700,6 +723,9 @@ def resuggest_text(req: ResuggestRequest):
         target_rec["viral_score"] = fresh_meta.get("viral_score", target_rec.get("viral_score"))
         target_rec["viral_reason"] = fresh_meta.get("viral_reason", target_rec.get("viral_reason"))
         target_rec["title_options"] = fresh_meta.get("title_options", target_rec.get("title_options"))
+        target_rec["title_variants"] = fresh_meta.get("title_variants", target_rec.get("title_variants", []))
+        target_rec["description"] = fresh_meta.get("description", target_rec.get("description", ""))
+        target_rec["description_options"] = fresh_meta.get("description_options", target_rec.get("description_options", []))
         target_rec["platforms"] = fresh_meta.get("platforms", target_rec.get("platforms"))
         if fresh_meta.get("title_options"):
             target_rec["title"] = fresh_meta["title_options"][0]
@@ -708,6 +734,16 @@ def resuggest_text(req: ResuggestRequest):
         target_file.write_text(json.dumps(target_rec, indent=2, ensure_ascii=False), encoding="utf-8")
 
     return target_rec
+
+@app.post("/api/metadata/cycle-emoji")
+def cycle_emoji_endpoint(req: EmojiCycleRequest):
+    new_text = title_desc_engine.cycle_title_emoji(req.text, mood=req.mood)
+    return {"text": new_text}
+
+@app.post("/api/metadata/toggle-emoji")
+def toggle_emoji_endpoint(req: EmojiToggleRequest):
+    new_text = title_desc_engine.toggle_emojis_in_text(req.text, remove=req.remove, mood=req.mood)
+    return {"text": new_text}
 
 @app.post("/api/export-zip")
 def export_zip(filename: str):
@@ -770,6 +806,8 @@ def update_settings(req: SettingsRequest):
         curr["brand_font"] = req.brand_font
     if req.brand_color is not None:
         curr["brand_color"] = req.brand_color
+    if req.emoji_level is not None:
+        curr["emoji_level"] = req.emoji_level
 
     save_settings(curr)
     return {"status": "saved", "message": "Settings save ho gayi hain!"}

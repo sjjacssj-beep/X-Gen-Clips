@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional, Tuple
 
 import httpx
 from .script_sanitizer import sanitize_metadata_obj, sanitize_urdu_to_hinglish
+from . import title_desc_engine
 
 logger = logging.getLogger("xgenclips.llm")
 
@@ -92,6 +93,76 @@ def clean_json_text(text: str) -> str:
     elif "```" in cleaned:
         cleaned = cleaned.split("```")[1].split("```")[0].strip()
     return cleaned.strip()
+
+def post_process_candidate(
+    c: Dict[str, Any],
+    video_context: Dict[str, Any],
+    language: str = "hinglish"
+) -> Dict[str, Any]:
+    """Ensures candidate has 3 validated topic-grounded titles and 2 structured 4-line descriptions."""
+    c_copy = dict(c)
+    clip_text = c_copy.get("text", "") or c_copy.get("transcript", "")
+    primary_topic, topic_kws = title_desc_engine.extract_primary_topic(video_context, clip_text)
+    mood = title_desc_engine.detect_clip_mood(f"{clip_text} {c_copy.get('viral_reason', '')}")
+
+    existing_titles = c_copy.get("title_options", [])
+    valid_titles = []
+    for t in existing_titles:
+        if isinstance(t, str):
+            ok, _ = title_desc_engine.validate_title(t, topic_kws, max_chars=60, allowed_lang=language)
+            if ok and t not in valid_titles:
+                valid_titles.append(t)
+
+    if len(valid_titles) < 3:
+        theme = c_copy.get("theme") or c_copy.get("title") or c_copy.get("hook_line") or "Insane Moment"
+        theme = re.sub(r'[^a-zA-Z0-9\s]', '', str(theme)).strip()[:24]
+        gen_titles = title_desc_engine.generate_3_titles(
+            primary_topic=primary_topic,
+            clip_theme=theme or "Highlight",
+            mood=mood,
+            language=language
+        )
+        c_copy["title_options"] = [t["title"] for t in gen_titles]
+        c_copy["title_variants"] = gen_titles
+        c_copy["title"] = c_copy["title_options"][0]
+    else:
+        c_copy["title_options"] = valid_titles[:3]
+        c_copy["title_variants"] = [{"id": i+1, "title": t} for i, t in enumerate(valid_titles[:3])]
+        c_copy["title"] = valid_titles[0]
+
+    # Generate 2 distinct 4-line structured descriptions
+    summary = c_copy.get("viral_reason") or f"{primary_topic} ka insane scene dekh kar hosh ud jayenge"
+    tags = c_copy.get("hashtags", [])
+    desc_variants = title_desc_engine.generate_2_descriptions(
+        primary_topic=primary_topic,
+        clip_summary=summary,
+        hashtags=tags,
+        language=language
+    )
+    c_copy["description_options"] = desc_variants
+    c_copy["description"] = desc_variants[0]["text"]
+
+    yt_meta = c_copy.get("platforms", {}).get("youtube", {}) if isinstance(c_copy.get("platforms"), dict) else {}
+    yt_meta["title"] = f"{c_copy['title']} #shorts" if not c_copy['title'].lower().endswith("#shorts") else c_copy['title']
+    yt_meta["description"] = desc_variants[0]["text"]
+    yt_meta["hashtags"] = tags or [f"#{primary_topic.replace(' ', '')}", "#GamingShorts", "#Shorts"]
+    yt_meta["title_options"] = c_copy["title_options"]
+    yt_meta["description_options"] = [d["text"] for d in desc_variants]
+
+    c_copy["platforms"] = {
+        "youtube": yt_meta,
+        "instagram": {
+            "title": c_copy["title"],
+            "description": f"{desc_variants[0]['text']}\n\nTag that one friend! 😂👇",
+            "hashtags": (tags[:5] if tags else ["#reels", "#explore", "#viral"])
+        },
+        "tiktok": {
+            "title": c_copy["title"],
+            "description": f"{c_copy['title']}\nFollow for Part 2! 🚀 #fyp",
+            "hashtags": (tags[:5] if tags else ["#fyp", "#viral", "#foryou"])
+        }
+    }
+    return c_copy
 
 def get_cache_path(prompt: str, model: str) -> Path:
     h = hashlib.sha256(f"{model}:{prompt}".encode("utf-8")).hexdigest()
@@ -376,30 +447,16 @@ Return ONLY a valid JSON array of evaluated candidates."""
                     clean_json = clean_json.split("```")[1].split("```")[0].strip()
                 
                 parsed = json.loads(clean_json)
-                if isinstance(parsed, dict) and "candidates" in parsed:
-                    return sanitize_metadata_obj(parsed["candidates"])
-                elif isinstance(parsed, list):
-                    return sanitize_metadata_obj(parsed)
+                c_list = parsed.get("candidates", []) if isinstance(parsed, dict) else (parsed if isinstance(parsed, list) else [])
+                if c_list:
+                    processed = [post_process_candidate(c, video_context, language) for c in c_list]
+                    return sanitize_metadata_obj(processed)
             except Exception as e:
                 logger.error(f"Failed to parse LLM JSON from {prov_used}: {e}")
 
         # Fallback heuristic generation if all providers fail
         logger.info("Using local algorithmic fallback for viral metadata packaging...")
-        results = []
-        for c in candidates:
-            c_copy = dict(c)
-            c_copy["viral_score"] = c_copy.get("heuristic_score", 85)
-            c_copy["viral_reason"] = "High speech pacing paired with audio climax creates peak 3-second hold rate."
-            c_copy["hook_line"] = "WAIT FOR THE CLUTCH! 🔥"
-            c_copy["title_options"] = [
-                "Yeh Twist Kisine Nahi Dekha Hoga! 🤯",
-                "Last Second Clutch In Gaming! ⚡",
-                "Bhai Ye Kya Ho Gaya? 😱"
-            ]
-            c_copy["description"] = "Aakhir ye kaise possible hua?! Comment me apna favorite part batao! 👇 Like & Subscribe for more fast-paced moments!\n\n#shorts #viral #trending"
-            c_copy["hashtags"] = ["#shorts", "#viral", "#gaming", "#trending", "#reels", "#fyp", "#desi"]
-            c_copy["emoji_plan"] = ["🔥", "💀", "😱"]
-            results.append(c_copy)
+        results = [post_process_candidate(c, video_context, language) for c in candidates]
         return sanitize_metadata_obj(results)
 
     def pick_clips_and_metadata(
@@ -523,7 +580,9 @@ Transcript:
                         validated.append(c)
                     if validated:
                         logger.info(f"Successfully generated {len(validated)} clips with provider '{prov_used}'")
-                        return sanitize_metadata_obj(validated)
+                        video_context = {"title": "Gaming Highlight", "category": "Gaming"}
+                        processed = [post_process_candidate(c, video_context, language) for c in validated]
+                        return sanitize_metadata_obj(processed)
             except Exception as e:
                 logger.warning(f"Failed to parse LLM JSON from '{prov_used}': {e}. Falling back to heuristic clips.")
 

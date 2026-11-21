@@ -4,6 +4,7 @@ import re
 import time
 from typing import List, Dict, Any, Tuple
 from .script_sanitizer import sanitize_metadata_obj, sanitize_urdu_to_hinglish
+from . import title_desc_engine
 
 DEFAULT_MODEL = "gemini-3.5-flash"
 MODEL_CANDIDATES = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.7-flash"]
@@ -223,23 +224,38 @@ def generate_heuristic_clips(
         else:
             c_start = target_start
             c_end = target_end
-            clip_text = "Viral Highlight"
+            clip_text = "Gaming Highlight"
 
-        words = clip_text.split()
-        lead = " ".join(words[:6]) if words else f"Highlight Part {i+1}"
-        clean_title = re.sub(r'[^\w\s]', '', lead).strip()
-        if len(clean_title) > 35:
-            clean_title = clean_title[:35].rsplit(' ', 1)[0]
+        # Topic extraction & grounded title generation via title_desc_engine
+        primary_topic, _ = title_desc_engine.extract_primary_topic({"title": "Gaming Highlight"}, clip_text)
+        mood = title_desc_engine.detect_clip_mood(clip_text)
+        title_variants = title_desc_engine.generate_3_titles(
+            primary_topic=primary_topic,
+            clip_theme=f"Moment #{i+1}",
+            mood=mood,
+            language="hinglish",
+            emoji_level="low"
+        )
+        title_options = [t["title"] for t in title_variants]
+        main_title = title_options[0]
+
+        desc_variants = title_desc_engine.generate_2_descriptions(
+            primary_topic=primary_topic,
+            clip_summary=f"{primary_topic} ka insane scene dekh kar hosh ud jayenge",
+            hashtags=[f"#{primary_topic.replace(' ', '')}", "#GamingShorts", "#Shorts"],
+            language="hinglish",
+            emoji_level="low"
+        )
+        main_desc = desc_variants[0]["text"]
 
         clips.append({
             "start": round(c_start, 2),
             "end": round(c_end, 2),
-            "title": clean_title or f"Viral Part {i+1}",
-            "title_options": [
-                clean_title or f"Viral Part {i+1}",
-                f"Wait For This Scene #{i+1} 💀",
-                f"Most Relatable Part #{i+1} 😂"
-            ],
+            "title": main_title,
+            "title_options": title_options,
+            "title_variants": title_variants,
+            "description": main_desc,
+            "description_options": desc_variants,
             "hook_line": "WATCH TILL END! 🔥",
             "hook_options": [
                 "WATCH TILL END! 🔥",
@@ -250,18 +266,20 @@ def generate_heuristic_clips(
             "viral_reason": "High verbal pacing and engaging story flow.",
             "platforms": {
                 "youtube": {
-                    "title": f"{clean_title} #shorts",
-                    "description": "Must watch highlight from this episode!\n\nSubscribe for daily clips!",
-                    "hashtags": ["#shorts", "#viral", "#trending", "#relatable"]
+                    "title": f"{main_title} #shorts",
+                    "description": main_desc,
+                    "hashtags": ["#shorts", "#viral", "#trending", f"#{primary_topic.replace(' ', '')}"],
+                    "title_options": title_options,
+                    "description_options": [d["text"] for d in desc_variants]
                 },
                 "instagram": {
-                    "title": clean_title,
-                    "description": "Tag that one friend who needs to see this! 😂👇\nFollow for more daily reels!",
-                    "hashtags": ["#reels", "#explore", "#viral", "#trending", "#comedy"]
+                    "title": main_title,
+                    "description": f"{main_desc}\n\nTag that one friend who needs to see this! 😂👇",
+                    "hashtags": ["#reels", "#explore", "#viral", "#trending"]
                 },
                 "tiktok": {
-                    "title": clean_title,
-                    "description": "Wait till you see what happens next 😭 #fyp",
+                    "title": main_title,
+                    "description": f"{main_title}\nFollow for Part 2! 🚀 #fyp",
                     "hashtags": ["#fyp", "#viral", "#foryou", "#trending"]
                 }
             }
@@ -329,8 +347,70 @@ Return strictly a valid JSON object:
         except Exception:
             continue
 
-    if not response or not response.text:
-        return {}
+    primary_topic, _ = title_desc_engine.extract_primary_topic({"title": title}, reason)
+    mood = title_desc_engine.detect_clip_mood(f"{title} {reason}")
 
-    cleaned = clean_json_text(response.text)
-    return sanitize_metadata_obj(json.loads(cleaned))
+    if response and response.text:
+        try:
+            cleaned = clean_json_text(response.text)
+            parsed = json.loads(cleaned)
+            # Validate or replace titles using title_desc_engine
+            valid_titles = []
+            for t_opt in parsed.get("title_options", []):
+                ok, _ = title_desc_engine.validate_title(t_opt, [primary_topic], max_chars=60, allowed_lang=language)
+                if ok:
+                    valid_titles.append(t_opt)
+            if len(valid_titles) < 3:
+                gen_titles = title_desc_engine.generate_3_titles(primary_topic, reason[:20], mood, language=language)
+                parsed["title_options"] = [t["title"] for t in gen_titles]
+                parsed["title_variants"] = gen_titles
+            else:
+                parsed["title_options"] = valid_titles[:3]
+                parsed["title_variants"] = [{"id": i+1, "title": t} for i, t in enumerate(valid_titles[:3])]
+
+            descs = title_desc_engine.generate_2_descriptions(primary_topic, reason, parsed.get("platforms", {}).get("youtube", {}).get("hashtags", []), language=language)
+            parsed["description_options"] = descs
+            parsed["description"] = descs[0]["text"]
+            parsed["title"] = parsed["title_options"][0]
+            if "youtube" in parsed.get("platforms", {}):
+                parsed["platforms"]["youtube"]["title_options"] = parsed["title_options"]
+                parsed["platforms"]["youtube"]["description_options"] = [d["text"] for d in descs]
+                parsed["platforms"]["youtube"]["description"] = descs[0]["text"]
+            return sanitize_metadata_obj(parsed)
+        except Exception as e:
+            logger.warning(f"Failed to parse or ground resuggest response: {e}")
+
+    # Fallback to local deterministic title & description generation
+    title_vars = title_desc_engine.generate_3_titles(primary_topic, reason[:20] if reason else "Highlight", mood, language=language)
+    desc_vars = title_desc_engine.generate_2_descriptions(primary_topic, reason or f"{primary_topic} insane highlight", [f"#{primary_topic.replace(' ', '')}", "#GamingShorts", "#Shorts"], language=language)
+    t_opts = [t["title"] for t in title_vars]
+    return sanitize_metadata_obj({
+        "title": t_opts[0],
+        "title_options": t_opts,
+        "title_variants": title_vars,
+        "description": desc_vars[0]["text"],
+        "description_options": desc_vars,
+        "hook_line": "WATCH TILL END! 🔥",
+        "hook_options": ["WATCH TILL END! 🔥", "WAIT FOR IT... 💀", "DON'T MISS THIS! 😱"],
+        "viral_score": 93,
+        "viral_reason": reason or "High emotional pacing and strong hook retention.",
+        "platforms": {
+            "youtube": {
+                "title": f"{t_opts[0]} #shorts",
+                "description": desc_vars[0]["text"],
+                "hashtags": [f"#{primary_topic.replace(' ', '')}", "#GamingShorts", "#Shorts", "#Viral"],
+                "title_options": t_opts,
+                "description_options": [d["text"] for d in desc_vars]
+            },
+            "instagram": {
+                "title": t_opts[0],
+                "description": f"{desc_vars[0]['text']}\n\nTag that one friend who needs to see this! 😂👇",
+                "hashtags": ["#reels", "#explore", "#viral", "#trending"]
+            },
+            "tiktok": {
+                "title": t_opts[0],
+                "description": f"{t_opts[0]}\nFollow for Part 2! 🚀 #fyp",
+                "hashtags": ["#fyp", "#viral", "#foryou", "#trending"]
+            }
+        }
+    })

@@ -225,6 +225,11 @@ const App = {
       fontSelect.value = this.settings.brand_font;
     }
 
+    const emojiSelect = document.getElementById('settingEmojiLevel');
+    if (emojiSelect && this.settings.emoji_level) {
+      emojiSelect.value = this.settings.emoji_level;
+    }
+
     const autoPasteToggle = document.getElementById('settingAutoPaste');
     if (autoPasteToggle) {
       autoPasteToggle.checked = !!this.settings.auto_render_on_paste;
@@ -241,6 +246,7 @@ const App = {
     const model = document.getElementById('settingModel')?.value;
     const wm = document.getElementById('settingWatermark')?.value.trim();
     const font = document.getElementById('settingFont')?.value;
+    const emojiLevel = document.getElementById('settingEmojiLevel')?.value || 'low';
     const autoPaste = document.getElementById('settingAutoPaste')?.checked ?? false;
     const autoFolder = document.getElementById('settingAutoFolder')?.checked ?? false;
 
@@ -248,6 +254,7 @@ const App = {
       model: model,
       brand_watermark: wm,
       brand_font: font,
+      emoji_level: emojiLevel,
       auto_render_on_paste: autoPaste,
       auto_open_folder: autoFolder
     };
@@ -1249,6 +1256,37 @@ const App = {
       </div>
     `).join('');
 
+    const titleOpts = clip.title_variants || (clip.title_options || [clip.title]).map((t, i) => ({ id: i+1, title: t, angle: `Option ${i+1}` }));
+    const titleVariantsHtml = titleOpts.map((t, idx) => {
+      const tText = typeof t === 'string' ? t : (t.title || '');
+      const tAngle = (typeof t === 'object' && t.angle) ? t.angle : `Option ${idx+1}`;
+      const isActive = (idx === 0) ? 'active' : '';
+      return `
+        <button type="button" class="clay-pill title-variant-pill ${isActive}" onclick="SocialManager.selectTitleVariant(${clip.id}, '${tText.replace(/'/g, "\\'")}', this)" style="font-size:11px; padding:3px 8px; cursor:pointer;">
+          ${tAngle}: <strong>${tText}</strong>
+        </button>
+      `;
+    }).join('');
+
+    const descOpts = clip.description_options || [
+      { id: 1, label: "Story / Hype Angle", text: yt.description || "" },
+      { id: 2, label: "Action / Gameplay Angle", text: yt.description || "" }
+    ];
+    const descVariantsHtml = descOpts.map((d, idx) => {
+      const dText = typeof d === 'string' ? d : (d.text || '');
+      const dLabel = (typeof d === 'object' && d.label) ? d.label : `Option ${idx+1}`;
+      const isActive = (idx === 0) ? 'active' : '';
+      return `
+        <button type="button" class="clay-pill desc-variant-pill ${isActive}" onclick="SocialManager.selectDescVariant(${clip.id}, '${dText.replace(/'/g, "\\'").replace(/\n/g, "\\n")}', this)" style="font-size:11px; padding:3px 8px; cursor:pointer;">
+          📄 ${dLabel}
+        </button>
+      `;
+    }).join('');
+
+    const activeTitle = (typeof titleOpts[0] === 'object' ? titleOpts[0].title : titleOpts[0]) || yt.title || clip.title;
+    const activeDesc = (typeof descOpts[0] === 'object' ? descOpts[0].text : descOpts[0]) || yt.description || "";
+    const activeFirstLine = activeDesc.split('\n')[0] || "";
+
     const posterAttr = (clip.covers && clip.covers.length > 0) ? `poster="/outputs/${clip.covers[0]}"` : '';
 
     return `
@@ -1322,25 +1360,67 @@ const App = {
           </div>
 
           <!-- YouTube Content Pane -->
-          <div class="platform-content platform-pane" data-plat="youtube" style="display:flex;">
-            <div class="copy-box">
-              <label class="copy-box-label">
-                <span>Title</span>
-                <a href="#" onclick="SocialManager.copyText(document.getElementById('yt-title-${clip.id}').value, this); return false;">Copy</a>
-              </label>
-              <input type="text" id="yt-title-${clip.id}" class="clay-input copy-title-input" value="${yt.title || ''}">
+          <div class="platform-content platform-pane" data-plat="youtube" style="display:flex; flex-direction:column; gap:16px;">
+            
+            <!-- YouTube Shorts Mobile Live Feed Preview -->
+            <div class="yt-shorts-live-preview" style="background:#0F0F0F; border:1px solid #272727; border-radius:12px; padding:12px 14px; color:#fff; display:flex; flex-direction:column; gap:6px; box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="background:#FF0000; color:#fff; font-size:10px; font-weight:900; padding:2px 6px; border-radius:4px; letter-spacing:0.5px;">SHORTS</span>
+                  <span style="font-size:12px; font-weight:700; color:#AAAAAA;">YouTube Feed Preview</span>
+                </div>
+                <span style="font-size:11px; color:#10B981; font-weight:700;">● Live Preview</span>
+              </div>
+              <div id="yt-preview-title-${clip.id}" style="font-size:14px; font-weight:700; line-height:1.35; color:#F1F1F1; margin-top:4px;">
+                ${activeTitle}
+              </div>
+              <div id="yt-preview-desc-${clip.id}" style="font-size:12px; color:#AAAAAA; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                ${activeFirstLine}
+              </div>
             </div>
+
+            <!-- Title Variant Picker & Actions -->
             <div class="copy-box">
-              <label class="copy-box-label">
-                <span>Description & CTA</span>
-                <a href="#" onclick="SocialManager.copyText(document.getElementById('yt-desc-${clip.id}').value, this); return false;">Copy</a>
+              <label class="copy-box-label" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+                <span style="font-weight:700;">Title (Max 60 Chars • Topic First)</span>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <button type="button" class="clay-pill" onclick="SocialManager.cycleTitleEmoji(${clip.id}, 'shock_action')" style="font-size:11px; padding:2px 8px; cursor:pointer;" title="Next approved mood emoji">🔀 Emoji Badlo</button>
+                  <button type="button" class="clay-pill" onclick="SocialManager.toggleTitleEmoji(${clip.id}, this, 'shock_action')" style="font-size:11px; padding:2px 8px; cursor:pointer;" title="Strip or restore emoji">🚫 Bina Emoji</button>
+                  <a href="#" onclick="SocialManager.copyText(document.getElementById('yt-title-${clip.id}').value, this); return false;" style="font-size:12px; font-weight:700; margin-left:4px;">📋 Copy</a>
+                </div>
               </label>
-              <textarea id="yt-desc-${clip.id}" class="copy-textarea copy-desc-textarea">${yt.description || ''}</textarea>
+
+              <!-- 3 Title Angles Pills -->
+              <div style="display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;">
+                ${titleVariantsHtml}
+              </div>
+
+              <input type="text" id="yt-title-${clip.id}" class="clay-input copy-title-input" value="${activeTitle}" oninput="SocialManager.syncLivePreview(${clip.id})" style="font-weight:600;">
             </div>
+
+            <!-- Description Variant Picker & Actions -->
+            <div class="copy-box">
+              <label class="copy-box-label" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+                <span style="font-weight:700;">Clean 4-Line Description</span>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <button type="button" class="clay-pill" onclick="SocialManager.cycleDescEmoji(${clip.id}, 'shock_action')" style="font-size:11px; padding:2px 8px; cursor:pointer;" title="Cycle description emoji">🔀 Emoji Badlo</button>
+                  <button type="button" class="clay-pill" onclick="SocialManager.toggleDescEmoji(${clip.id}, this, 'shock_action')" style="font-size:11px; padding:2px 8px; cursor:pointer;" title="Strip or restore emojis">🚫 Bina Emoji</button>
+                  <a href="#" onclick="SocialManager.copyText(document.getElementById('yt-desc-${clip.id}').value, this); return false;" style="font-size:12px; font-weight:700; margin-left:4px;">📋 Copy</a>
+                </div>
+              </label>
+
+              <!-- 2 Description Angles Pills -->
+              <div style="display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;">
+                ${descVariantsHtml}
+              </div>
+
+              <textarea id="yt-desc-${clip.id}" class="copy-textarea copy-desc-textarea" rows="4" oninput="SocialManager.syncLivePreview(${clip.id})">${activeDesc}</textarea>
+            </div>
+
             <div class="copy-box">
               <label class="copy-box-label">
                 <span>Hashtags</span>
-                <a href="#" onclick="SocialManager.copyText(document.getElementById('yt-tags-${clip.id}').value, this); return false;">Copy</a>
+                <a href="#" onclick="SocialManager.copyText(document.getElementById('yt-tags-${clip.id}').value, this); return false;">📋 Copy</a>
               </label>
               <input type="text" id="yt-tags-${clip.id}" class="clay-input copy-tags-input" value="${(yt.hashtags || []).join(' ')}">
             </div>

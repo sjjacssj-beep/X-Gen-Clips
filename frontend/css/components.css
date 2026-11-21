@@ -530,6 +530,26 @@
   box-shadow: var(--clay-inset);
 }
 
+.title-variant-pill, .desc-variant-pill {
+  transition: all 0.2s ease;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+}
+
+.title-variant-pill:hover, .desc-variant-pill:hover {
+  border-color: var(--accent-orange);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.title-variant-pill.active, .desc-variant-pill.active {
+  border-color: var(--accent-orange) !important;
+  color: #fff !important;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(217, 119, 6, 0.32)) !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.25) !important;
+}
+
 /* Quality Check Pill Bar */
 .quality-bar {
   display: flex;
